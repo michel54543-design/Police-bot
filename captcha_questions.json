@@ -1,901 +1,901 @@
 [
   {
-    "question": "Security check #1: 2 + 4 = ?",
+    "question": "Сколько будет 2 + 3?",
     "answers": [
-      "6",
-      "7",
-      "9"
+      "5",
+      "4",
+      "6"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #2: 3 + 7 = ?",
+    "question": "Сколько будет 7 - 4?",
+    "answers": [
+      "2",
+      "3",
+      "4"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Сколько будет 5 + 6?",
     "answers": [
       "10",
+      "12",
+      "11"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Сколько будет 9 - 2?",
+    "answers": [
+      "7",
+      "6",
+      "8"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Сколько будет 3 × 3?",
+    "answers": [
+      "6",
+      "9",
+      "12"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Сколько будет 12 ÷ 3?",
+    "answers": [
+      "3",
+      "5",
+      "4"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Сколько будет 8 + 4?",
+    "answers": [
+      "12",
       "11",
       "13"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #3: 4 + 10 = ?",
+    "question": "Сколько будет 15 - 5?",
     "answers": [
+      "9",
+      "10",
+      "11"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Сколько будет 6 × 2?",
+    "answers": [
+      "10",
       "14",
-      "15",
-      "17"
+      "12"
     ],
-    "correct": 0
+    "correct": 2
   },
   {
-    "question": "Security check #4: 5 + 13 = ?",
+    "question": "Сколько будет 20 ÷ 4?",
     "answers": [
-      "18",
-      "19",
-      "21"
+      "5",
+      "4",
+      "6"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #5: 6 + 1 = ?",
-    "answers": [
-      "7",
-      "8",
-      "10"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #6: 7 + 4 = ?",
-    "answers": [
-      "11",
-      "12",
-      "14"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #7: 8 + 7 = ?",
-    "answers": [
-      "15",
-      "16",
-      "18"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #8: 9 + 10 = ?",
-    "answers": [
-      "19",
-      "20",
-      "22"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #9: 10 + 13 = ?",
-    "answers": [
-      "23",
-      "24",
-      "26"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #10: 11 + 1 = ?",
-    "answers": [
-      "12",
-      "13",
-      "15"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #11: 12 + 4 = ?",
-    "answers": [
-      "16",
-      "17",
-      "19"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #12: 13 + 7 = ?",
-    "answers": [
-      "20",
-      "21",
-      "23"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #13: 14 + 10 = ?",
-    "answers": [
-      "24",
-      "25",
-      "27"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #14: 15 + 13 = ?",
-    "answers": [
-      "28",
-      "29",
-      "31"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #15: 16 + 1 = ?",
-    "answers": [
-      "17",
-      "18",
-      "20"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #16: 17 + 4 = ?",
-    "answers": [
-      "21",
-      "22",
-      "24"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #17: 18 + 7 = ?",
-    "answers": [
-      "25",
-      "26",
-      "28"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #18: 19 + 10 = ?",
-    "answers": [
-      "29",
-      "30",
-      "32"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #19: 20 + 13 = ?",
-    "answers": [
-      "33",
-      "34",
-      "36"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #20: 1 + 1 = ?",
-    "answers": [
-      "2",
-      "3",
-      "5"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #21: 2 + 4 = ?",
+    "question": "Сколько дней в неделе?",
     "answers": [
       "6",
       "7",
-      "9"
+      "8"
     ],
-    "correct": 0
+    "correct": 1
   },
   {
-    "question": "Security check #22: 3 + 7 = ?",
+    "question": "Сколько месяцев в году?",
     "answers": [
       "10",
       "11",
-      "13"
+      "12"
     ],
-    "correct": 0
+    "correct": 2
   },
   {
-    "question": "Security check #23: 4 + 10 = ?",
+    "question": "Сколько часов в сутках?",
     "answers": [
-      "14",
-      "15",
-      "17"
+      "24",
+      "12",
+      "48"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #24: 5 + 13 = ?",
+    "question": "Сколько минут в одном часе?",
+    "answers": [
+      "30",
+      "60",
+      "100"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Сколько секунд в одной минуте?",
+    "answers": [
+      "50",
+      "100",
+      "60"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какой день идёт после понедельника?",
+    "answers": [
+      "Вторник",
+      "Среда",
+      "Воскресенье"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Какой день идёт перед пятницей?",
+    "answers": [
+      "Среда",
+      "Четверг",
+      "Суббота"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какой месяц идёт после января?",
+    "answers": [
+      "Март",
+      "Декабрь",
+      "Февраль"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какой месяц идёт перед декабрём?",
+    "answers": [
+      "Ноябрь",
+      "Октябрь",
+      "Январь"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Сколько времён года?",
+    "answers": [
+      "3",
+      "4",
+      "5"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какое время года наступает после зимы?",
+    "answers": [
+      "Осень",
+      "Лето",
+      "Весна"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какое время года наступает после лета?",
+    "answers": [
+      "Осень",
+      "Весна",
+      "Зима"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "В какое время года обычно идёт снег?",
+    "answers": [
+      "Летом",
+      "Зимой",
+      "Весной"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "В какое время года обычно жарче всего?",
+    "answers": [
+      "Зимой",
+      "Осенью",
+      "Летом"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какого цвета обычно трава?",
+    "answers": [
+      "Зелёного",
+      "Синего",
+      "Красного"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Какого цвета обычно снег?",
+    "answers": [
+      "Чёрного",
+      "Белого",
+      "Зелёного"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какого цвета спелый лимон?",
+    "answers": [
+      "Фиолетового",
+      "Синего",
+      "Жёлтого"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какого цвета небо в ясный день?",
+    "answers": [
+      "Голубого",
+      "Коричневого",
+      "Розового"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Какого цвета уголь?",
+    "answers": [
+      "Белого",
+      "Чёрного",
+      "Жёлтого"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какого цвета морковь?",
+    "answers": [
+      "Синего",
+      "Серого",
+      "Оранжевого"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Кто говорит «мяу»?",
+    "answers": [
+      "Кот",
+      "Собака",
+      "Корова"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Кто говорит «гав»?",
+    "answers": [
+      "Кошка",
+      "Собака",
+      "Лошадь"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Кто даёт молоко?",
+    "answers": [
+      "Петух",
+      "Волк",
+      "Корова"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какое животное имеет длинный хобот?",
+    "answers": [
+      "Слон",
+      "Тигр",
+      "Заяц"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Какое животное обычно живёт в воде?",
+    "answers": [
+      "Курица",
+      "Рыба",
+      "Кошка"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Кто несёт яйца?",
+    "answers": [
+      "Кот",
+      "Пёс",
+      "Курица"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какое животное называют царём зверей?",
+    "answers": [
+      "Лев",
+      "Заяц",
+      "Ёж"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Кто любит мёд?",
+    "answers": [
+      "Дельфин",
+      "Медведь",
+      "Воробей"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какое животное прыгает и носит детёныша в сумке?",
+    "answers": [
+      "Жираф",
+      "Лиса",
+      "Кенгуру"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какое животное имеет иголки?",
+    "answers": [
+      "Ёж",
+      "Кролик",
+      "Олень"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Что светит днём?",
+    "answers": [
+      "Фонарь",
+      "Солнце",
+      "Свеча"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Что обычно видно ночью на небе?",
+    "answers": [
+      "Радугу",
+      "Солнце",
+      "Луну"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Что падает с неба во время дождя?",
+    "answers": [
+      "Капли воды",
+      "Песок",
+      "Листья"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Что появляется после дождя при солнце?",
+    "answers": [
+      "Туман",
+      "Радуга",
+      "Снег"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Где растут деревья?",
+    "answers": [
+      "В море",
+      "В космосе",
+      "В лесу"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Что замерзает при сильном морозе?",
+    "answers": [
+      "Вода",
+      "Огонь",
+      "Песок"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Что нужно человеку для дыхания?",
+    "answers": [
+      "Камень",
+      "Воздух",
+      "Металл"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Что течёт в реке?",
+    "answers": [
+      "Мука",
+      "Дым",
+      "Вода"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Что бывает горячим и даёт свет?",
+    "answers": [
+      "Огонь",
+      "Лёд",
+      "Снег"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Где восходит солнце?",
+    "answers": [
+      "На западе",
+      "На востоке",
+      "На севере"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какой предмет показывает время?",
+    "answers": [
+      "Ложка",
+      "Подушка",
+      "Часы"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Чем обычно пишут на бумаге?",
+    "answers": [
+      "Ручкой",
+      "Вилкой",
+      "Тарелкой"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Чем режут хлеб?",
+    "answers": [
+      "Ключом",
+      "Ножом",
+      "Щёткой"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Из чего пьют чай?",
+    "answers": [
+      "Из ботинка",
+      "Из книги",
+      "Из чашки"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "На чём обычно сидят?",
+    "answers": [
+      "На стуле",
+      "На потолке",
+      "На лампе"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Чем открывают дверь?",
+    "answers": [
+      "Линейкой",
+      "Ключом",
+      "Тарелкой"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Что используют для звонков?",
+    "answers": [
+      "Подушку",
+      "Кастрюлю",
+      "Телефон"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Где хранят продукты холодными?",
+    "answers": [
+      "В холодильнике",
+      "В шкафу",
+      "В духовке"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Чем моют руки?",
+    "answers": [
+      "Песком",
+      "Водой и мылом",
+      "Чернилами"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "На чём спят?",
+    "answers": [
+      "На столе",
+      "На двери",
+      "На кровати"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какая буква идёт после «А»?",
+    "answers": [
+      "Б",
+      "В",
+      "Г"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Какая буква идёт после «Б»?",
+    "answers": [
+      "А",
+      "В",
+      "Д"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какая буква идёт перед «Г»?",
+    "answers": [
+      "Б",
+      "Д",
+      "В"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "С какой буквы начинается слово «дом»?",
+    "answers": [
+      "Д",
+      "М",
+      "О"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "С какой буквы начинается слово «кот»?",
+    "answers": [
+      "Т",
+      "К",
+      "О"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какая последняя буква в слове «мир»?",
+    "answers": [
+      "М",
+      "И",
+      "Р"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Сколько букв в слове «кот»?",
+    "answers": [
+      "3",
+      "2",
+      "4"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Сколько букв в слове «вода»?",
+    "answers": [
+      "3",
+      "4",
+      "5"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Какое слово обозначает цвет: «красный» или «стол»?",
+    "answers": [
+      "Стол",
+      "Окно",
+      "Красный"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какое слово обозначает животное?",
+    "answers": [
+      "Лиса",
+      "Стул",
+      "Чашка"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Что больше: 10 или 5?",
+    "answers": [
+      "5",
+      "10",
+      "Одинаково"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Что меньше: 3 или 8?",
+    "answers": [
+      "8",
+      "Одинаково",
+      "3"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какое число идёт после 9?",
+    "answers": [
+      "10",
+      "8",
+      "11"
+    ],
+    "correct": 0
+  },
+  {
+    "question": "Какое число идёт перед 20?",
     "answers": [
       "18",
       "19",
       "21"
     ],
-    "correct": 0
+    "correct": 1
   },
   {
-    "question": "Security check #25: 6 + 1 = ?",
+    "question": "Сколько сторон у треугольника?",
     "answers": [
-      "7",
-      "8",
-      "10"
+      "4",
+      "5",
+      "3"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Сколько сторон у квадрата?",
+    "answers": [
+      "4",
+      "3",
+      "6"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #26: 7 + 4 = ?",
+    "question": "Сколько колёс у обычного велосипеда?",
     "answers": [
-      "11",
-      "12",
-      "14"
+      "3",
+      "2",
+      "4"
     ],
-    "correct": 0
+    "correct": 1
   },
   {
-    "question": "Security check #27: 8 + 7 = ?",
-    "answers": [
-      "15",
-      "16",
-      "18"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #28: 9 + 10 = ?",
-    "answers": [
-      "19",
-      "20",
-      "22"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #29: 10 + 13 = ?",
-    "answers": [
-      "23",
-      "24",
-      "26"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #30: 11 + 1 = ?",
-    "answers": [
-      "12",
-      "13",
-      "15"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #31: 12 + 4 = ?",
-    "answers": [
-      "16",
-      "17",
-      "19"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #32: 13 + 7 = ?",
-    "answers": [
-      "20",
-      "21",
-      "23"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #33: 14 + 10 = ?",
-    "answers": [
-      "24",
-      "25",
-      "27"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #34: 15 + 13 = ?",
-    "answers": [
-      "28",
-      "29",
-      "31"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #35: 16 + 1 = ?",
-    "answers": [
-      "17",
-      "18",
-      "20"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #36: 17 + 4 = ?",
-    "answers": [
-      "21",
-      "22",
-      "24"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #37: 18 + 7 = ?",
-    "answers": [
-      "25",
-      "26",
-      "28"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #38: 19 + 10 = ?",
-    "answers": [
-      "29",
-      "30",
-      "32"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #39: 20 + 13 = ?",
-    "answers": [
-      "33",
-      "34",
-      "36"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #40: 1 + 1 = ?",
+    "question": "Сколько колёс у обычной легковой машины?",
     "answers": [
       "2",
-      "3",
-      "5"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #41: 2 + 4 = ?",
-    "answers": [
       "6",
-      "7",
-      "9"
+      "4"
     ],
-    "correct": 0
+    "correct": 2
   },
   {
-    "question": "Security check #42: 3 + 7 = ?",
+    "question": "Сколько пальцев на одной руке?",
     "answers": [
-      "10",
-      "11",
-      "13"
+      "5",
+      "4",
+      "6"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #43: 4 + 10 = ?",
+    "question": "Сколько глаз обычно у человека?",
     "answers": [
-      "14",
-      "15",
-      "17"
+      "1",
+      "2",
+      "3"
     ],
-    "correct": 0
+    "correct": 1
   },
   {
-    "question": "Security check #44: 5 + 13 = ?",
+    "question": "Сколько ушей обычно у человека?",
     "answers": [
-      "18",
-      "19",
-      "21"
+      "1",
+      "4",
+      "2"
     ],
-    "correct": 0
+    "correct": 2
   },
   {
-    "question": "Security check #45: 6 + 1 = ?",
+    "question": "Сколько ног у кошки?",
     "answers": [
-      "7",
-      "8",
-      "10"
+      "4",
+      "2",
+      "6"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #46: 7 + 4 = ?",
+    "question": "Сколько крыльев у обычной птицы?",
     "answers": [
-      "11",
-      "12",
-      "14"
+      "1",
+      "2",
+      "4"
     ],
-    "correct": 0
+    "correct": 1
   },
   {
-    "question": "Security check #47: 8 + 7 = ?",
-    "answers": [
-      "15",
-      "16",
-      "18"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #48: 9 + 10 = ?",
-    "answers": [
-      "19",
-      "20",
-      "22"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #49: 10 + 13 = ?",
-    "answers": [
-      "23",
-      "24",
-      "26"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #50: 11 + 1 = ?",
-    "answers": [
-      "12",
-      "13",
-      "15"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #51: 12 + 4 = ?",
-    "answers": [
-      "16",
-      "17",
-      "19"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #52: 13 + 7 = ?",
-    "answers": [
-      "20",
-      "21",
-      "23"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #53: 14 + 10 = ?",
-    "answers": [
-      "24",
-      "25",
-      "27"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #54: 15 + 13 = ?",
-    "answers": [
-      "28",
-      "29",
-      "31"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #55: 16 + 1 = ?",
-    "answers": [
-      "17",
-      "18",
-      "20"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #56: 17 + 4 = ?",
-    "answers": [
-      "21",
-      "22",
-      "24"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #57: 18 + 7 = ?",
-    "answers": [
-      "25",
-      "26",
-      "28"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #58: 19 + 10 = ?",
-    "answers": [
-      "29",
-      "30",
-      "32"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #59: 20 + 13 = ?",
-    "answers": [
-      "33",
-      "34",
-      "36"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #60: 1 + 1 = ?",
+    "question": "Сколько цветов у светофора?",
     "answers": [
       "2",
-      "3",
-      "5"
+      "4",
+      "3"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "На какой свет светофора можно идти?",
+    "answers": [
+      "На зелёный",
+      "На красный",
+      "На любой"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #61: 2 + 4 = ?",
+    "question": "На какой свет светофора нужно остановиться?",
     "answers": [
-      "6",
-      "7",
-      "9"
+      "На зелёный",
+      "На красный",
+      "На белый"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Где едут автомобили?",
+    "answers": [
+      "По крыше",
+      "По реке",
+      "По дороге"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Где ходят поезда?",
+    "answers": [
+      "По рельсам",
+      "По облакам",
+      "По лестнице"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #62: 3 + 7 = ?",
+    "question": "Что летает в небе и перевозит пассажиров?",
     "answers": [
-      "10",
-      "11",
-      "13"
+      "Автобус",
+      "Самолёт",
+      "Лодка"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Что плавает по воде?",
+    "answers": [
+      "Трамвай",
+      "Велосипед",
+      "Корабль"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Кто лечит людей?",
+    "answers": [
+      "Врач",
+      "Повар",
+      "Водитель"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #63: 4 + 10 = ?",
+    "question": "Кто тушит пожары?",
     "answers": [
-      "14",
-      "15",
-      "17"
+      "Почтальон",
+      "Пожарный",
+      "Пекарь"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Кто учит детей в школе?",
+    "answers": [
+      "Рыбак",
+      "Механик",
+      "Учитель"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Кто готовит еду в ресторане?",
+    "answers": [
+      "Повар",
+      "Пилот",
+      "Строитель"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #64: 5 + 13 = ?",
+    "question": "Кто управляет самолётом?",
     "answers": [
-      "18",
-      "19",
-      "21"
+      "Доктор",
+      "Пилот",
+      "Музыкант"
+    ],
+    "correct": 1
+  },
+  {
+    "question": "Кто следит за порядком?",
+    "answers": [
+      "Художник",
+      "Садовник",
+      "Полицейский"
+    ],
+    "correct": 2
+  },
+  {
+    "question": "Какой продукт делают из молока?",
+    "answers": [
+      "Сыр",
+      "Гвоздь",
+      "Кирпич"
     ],
     "correct": 0
   },
   {
-    "question": "Security check #65: 6 + 1 = ?",
+    "question": "Что пекут из теста?",
     "answers": [
-      "7",
-      "8",
-      "10"
+      "Камень",
+      "Хлеб",
+      "Стекло"
     ],
-    "correct": 0
+    "correct": 1
   },
   {
-    "question": "Security check #66: 7 + 4 = ?",
+    "question": "Какой фрукт обычно красный или зелёный?",
     "answers": [
-      "11",
-      "12",
-      "14"
+      "Картофель",
+      "Лук",
+      "Яблоко"
     ],
-    "correct": 0
+    "correct": 2
   },
   {
-    "question": "Security check #67: 8 + 7 = ?",
+    "question": "Какой овощ растёт под землёй?",
     "answers": [
-      "15",
-      "16",
-      "18"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #68: 9 + 10 = ?",
-    "answers": [
-      "19",
-      "20",
-      "22"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #69: 10 + 13 = ?",
-    "answers": [
-      "23",
-      "24",
-      "26"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #70: 11 + 1 = ?",
-    "answers": [
-      "12",
-      "13",
-      "15"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #71: 12 + 4 = ?",
-    "answers": [
-      "16",
-      "17",
-      "19"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #72: 13 + 7 = ?",
-    "answers": [
-      "20",
-      "21",
-      "23"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #73: 14 + 10 = ?",
-    "answers": [
-      "24",
-      "25",
-      "27"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #74: 15 + 13 = ?",
-    "answers": [
-      "28",
-      "29",
-      "31"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #75: 16 + 1 = ?",
-    "answers": [
-      "17",
-      "18",
-      "20"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #76: 17 + 4 = ?",
-    "answers": [
-      "21",
-      "22",
-      "24"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #77: 18 + 7 = ?",
-    "answers": [
-      "25",
-      "26",
-      "28"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #78: 19 + 10 = ?",
-    "answers": [
-      "29",
-      "30",
-      "32"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #79: 20 + 13 = ?",
-    "answers": [
-      "33",
-      "34",
-      "36"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #80: 1 + 1 = ?",
-    "answers": [
-      "2",
-      "3",
-      "5"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #81: 2 + 4 = ?",
-    "answers": [
-      "6",
-      "7",
-      "9"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #82: 3 + 7 = ?",
-    "answers": [
-      "10",
-      "11",
-      "13"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #83: 4 + 10 = ?",
-    "answers": [
-      "14",
-      "15",
-      "17"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #84: 5 + 13 = ?",
-    "answers": [
-      "18",
-      "19",
-      "21"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #85: 6 + 1 = ?",
-    "answers": [
-      "7",
-      "8",
-      "10"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #86: 7 + 4 = ?",
-    "answers": [
-      "11",
-      "12",
-      "14"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #87: 8 + 7 = ?",
-    "answers": [
-      "15",
-      "16",
-      "18"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #88: 9 + 10 = ?",
-    "answers": [
-      "19",
-      "20",
-      "22"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #89: 10 + 13 = ?",
-    "answers": [
-      "23",
-      "24",
-      "26"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #90: 11 + 1 = ?",
-    "answers": [
-      "12",
-      "13",
-      "15"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #91: 12 + 4 = ?",
-    "answers": [
-      "16",
-      "17",
-      "19"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #92: 13 + 7 = ?",
-    "answers": [
-      "20",
-      "21",
-      "23"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #93: 14 + 10 = ?",
-    "answers": [
-      "24",
-      "25",
-      "27"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #94: 15 + 13 = ?",
-    "answers": [
-      "28",
-      "29",
-      "31"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #95: 16 + 1 = ?",
-    "answers": [
-      "17",
-      "18",
-      "20"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #96: 17 + 4 = ?",
-    "answers": [
-      "21",
-      "22",
-      "24"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #97: 18 + 7 = ?",
-    "answers": [
-      "25",
-      "26",
-      "28"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #98: 19 + 10 = ?",
-    "answers": [
-      "29",
-      "30",
-      "32"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #99: 20 + 13 = ?",
-    "answers": [
-      "33",
-      "34",
-      "36"
-    ],
-    "correct": 0
-  },
-  {
-    "question": "Security check #100: 1 + 1 = ?",
-    "answers": [
-      "2",
-      "3",
-      "5"
+      "Картофель",
+      "Яблоко",
+      "Виноград"
     ],
     "correct": 0
   }
