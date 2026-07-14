@@ -32,6 +32,16 @@ def is_pending(chat_id: int, user_id: int) -> bool:
     return (chat_id, user_id) in pending
 
 
+def forget_user(chat_id: int, user_id: int) -> None:
+    """Очищает состояние пользователя при выходе, чтобы при повторном входе капча запускалась снова."""
+    data = pending.pop((chat_id, user_id), None)
+    if data:
+        task = data.get("timeout_task")
+        if isinstance(task, asyncio.Task):
+            task.cancel()
+    passed_users.discard((chat_id, user_id))
+
+
 def make_question() -> tuple[dict[str, object], InlineKeyboardMarkup, int]:
     question = random.choice(QUESTIONS)
     answers = list(enumerate(question["answers"]))

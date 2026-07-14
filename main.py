@@ -81,12 +81,22 @@ def looks_like_ad(message: Message) -> bool:
     return any(marker in lowered for marker in markers)
 
 
+def member_status(value: object) -> str:
+    return str(getattr(value, "value", value))
+
+
 def user_just_joined(event: ChatMemberUpdated) -> bool:
-    old_status = getattr(event.old_chat_member.status, "value", event.old_chat_member.status)
-    new_status = getattr(event.new_chat_member.status, "value", event.new_chat_member.status)
+    old_status = member_status(event.old_chat_member.status)
+    new_status = member_status(event.new_chat_member.status)
     return old_status in {"left", "kicked"} and new_status in {
-        "member", "restricted", "administrator"
+        "member", "restricted", "administrator", "creator"
     }
+
+
+def user_just_left(event: ChatMemberUpdated) -> bool:
+    old_status = member_status(event.old_chat_member.status)
+    new_status = member_status(event.new_chat_member.status)
+    return old_status in {"member", "restricted", "administrator", "creator"} and new_status in {"left", "kicked"}
 
 
 async def process_new_user(message: Message | None, chat_id: int, user: User) -> None:
@@ -187,11 +197,22 @@ async def new_members(message: Message) -> None:
 
 
 @dp.chat_member()
-async def chat_member_join(event: ChatMemberUpdated) -> None:
-    """Резервный обработчик: ловит входы, которые не пришли как service message."""
-    if not user_just_joined(event):
+async def chat_member_update(event: ChatMemberUpdated) -> None:
+    """Надёжно обрабатывает вход и выход участника через chat_member update."""
+    user = event.new_chat_member.user
+    old_status = member_status(event.old_chat_member.status)
+    new_status = member_status(event.new_chat_member.status)
+    logging.info(
+        "chat_member update chat_id=%s user_id=%s %s -> %s",
+        event.chat.id, user.id, old_status, new_status,
+    )
+
+    if user_just_left(event):
+        captcha.forget_user(event.chat.id, user.id)
         return
-    await process_new_user(None, event.chat.id, event.new_chat_member.user)
+
+    if user_just_joined(event):
+        await process_new_user(None, event.chat.id, user)
 
 
 @dp.callback_query(F.data.startswith("captcha:"))
@@ -359,7 +380,12 @@ async def main() -> None:
         BOT_USERNAME = me.username
         BOT_NAME = me.full_name
         await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot)
+        # Явно запрашиваем chat_member: без него Telegram может присылать только
+        # обычные сообщения, и входы новых участников останутся незамеченными.
+        await dp.start_polling(
+            bot,
+            allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
+        )
     finally:
         await health_runner.cleanup()
         await bot.session.close()
