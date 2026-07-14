@@ -257,11 +257,18 @@ async def main() -> None:
     global BOT_NAME
     global BOT_USERNAME
 
-    me = await bot.get_me()
-    BOT_ID = me.id
-    BOT_USERNAME = me.username
-    BOT_NAME = me.full_name
-    await dp.start_polling(bot)
+    web_runner = await start_web_server()
+    try:
+        me = await bot.get_me()
+        BOT_ID = me.id
+        BOT_USERNAME = me.username
+        BOT_NAME = me.full_name
+
+        # Remove an old webhook before starting long polling.
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    finally:
+        await web_runner.cleanup()
 
 
 if __name__ == "__main__":

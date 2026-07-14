@@ -100,3 +100,20 @@
 
 - База анекдотов не раздута искусственно до 3000 строк, чтобы не заполнять проект мусорными повторами.
 - База общих ответов Police меньше 10000, но категории сохранены и готовы к дальнейшему расширению.
+
+## v2.2 — режим молчания и взрослый юмор
+
+- База `/анекдот` расширена до 3000 записей.
+- В базе присутствуют анекдоты с разговорной ненормативной лексикой.
+- Добавлен `config.py` с настройкой `ALLOW_DIRTY_JOKES = True`.
+- При `ALLOW_DIRTY_JOKES = False` анекдоты с матом исключаются при запуске.
+- Подтверждено: Police не запускает периодические публикации и не начинает разговор сам.
+  Сообщения отправляются только для капчи, команд, явных обращений и модерации.
+
+
+## v2.3 — Render Free Web Service
+
+- Added a lightweight aiohttp health server on `PORT` with `/` and `/health` endpoints.
+- Changed Render configuration from worker to free-compatible Web Service.
+- Added webhook cleanup before starting aiogram polling.
+- Police still never posts unsolicited messages to the Telegram chat.
