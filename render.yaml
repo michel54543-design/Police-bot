@@ -2,6 +2,7 @@ services:
   - type: web
     name: police-bot
     runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python main.py
     healthCheckPath: /health

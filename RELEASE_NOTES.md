@@ -110,10 +110,3 @@
 - Подтверждено: Police не запускает периодические публикации и не начинает разговор сам.
   Сообщения отправляются только для капчи, команд, явных обращений и модерации.
 
-
-## v2.3 — Render Free Web Service
-
-- Added a lightweight aiohttp health server on `PORT` with `/` and `/health` endpoints.
-- Changed Render configuration from worker to free-compatible Web Service.
-- Added webhook cleanup before starting aiogram polling.
-- Police still never posts unsolicited messages to the Telegram chat.

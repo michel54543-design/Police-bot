@@ -2,6 +2,8 @@ import asyncio
 import json
 import logging
 import os
+
+from aiohttp import web
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
@@ -252,23 +254,38 @@ async def all_messages(message: Message) -> None:
             await message.answer(style(reply))
 
 
+async def health(_: web.Request) -> web.Response:
+    return web.Response(text="Police Bot is running")
+
+
+async def start_health_server() -> web.AppRunner:
+    app = web.Application()
+    app.router.add_get("/", health)
+    app.router.add_get("/health", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    port = int(os.getenv("PORT", "10000"))
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logging.info("Health server started on port %s", port)
+    return runner
+
+
 async def main() -> None:
     global BOT_ID
     global BOT_NAME
     global BOT_USERNAME
 
-    web_runner = await start_web_server()
+    runner = await start_health_server()
     try:
+        await bot.delete_webhook(drop_pending_updates=True)
         me = await bot.get_me()
         BOT_ID = me.id
         BOT_USERNAME = me.username
         BOT_NAME = me.full_name
-
-        # Remove an old webhook before starting long polling.
-        await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:
-        await web_runner.cleanup()
+        await runner.cleanup()
 
 
 if __name__ == "__main__":
