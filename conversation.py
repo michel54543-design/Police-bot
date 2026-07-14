@@ -10,7 +10,6 @@ from reply_selector import choose
 
 MEMORY_SECONDS = 15 * 60
 MAX_MESSAGES = 8
-RUDE_REPLY_COOLDOWN = 30
 
 REPLIES_PATH = Path(__file__).resolve().parent / "police_replies.json"
 
@@ -18,54 +17,6 @@ memory: dict[int, deque[tuple[float, str]]] = defaultdict(lambda: deque(maxlen=M
 last_explicit_address_at: dict[int, float] = {}
 last_category: dict[int, str] = {}
 consecutive_addresses: dict[int, int] = defaultdict(int)
-last_rude_reply_at: dict[int, float] = {}
-last_rude_reply_text: dict[int, str] = {}
-
-RUDE_MARKERS = [
-    "дурак",
-    "тупой",
-    "тупишь",
-    "заткнись",
-    "молчи",
-    "отстань",
-    "надоел",
-    "бесишь",
-    "кривой бот",
-    "бот тупит",
-    "плохой бот",
-    "глупый бот",
-    "иди отсюда",
-    "иди лесом",
-    "не мешай",
-    "что ты несешь",
-    "чего ты несешь",
-    "ты сломан",
-    "бот сломан",
-]
-
-RUDE_REPLIES = [
-    "😎 Полегче, воин. Police не обижается, но протокол всё записал.",
-    "🛡 Грубость замечена. Ответ стража: спокойно, без паники.",
-    "🤖 Я бот, у меня нервы железные. Но давай без наездов.",
-    "😂 Ого, режим сурового викинга включён. Дышим ровно.",
-    "⚔️ Не путай Police с противником на арене. Я за порядок.",
-    "🍺 Спокойнее, герой. Лучше направь эту энергию на рекламщиков.",
-    "🪓 Я бы поднял виртуальный топор, но сегодня работаем культурно.",
-    "🤖 На бота наехал? Смело. Бесполезно, но смело.",
-    "🛡 Страж услышал тон. Страж предлагает снизить громкость.",
-    "😂 Я не обижаюсь. У меня такой функции просто нет.",
-    "⚔️ В чате можно быть грозным, но лучше быть вежливым.",
-    "🍻 Давай без резких выпадов. Напиши /анекдот и перезагрузим настроение.",
-    "🤖 Я всего лишь код, но даже код любит нормальное общение.",
-    "😎 Police на посту. Провокации приняты, но не обработаны.",
-    "🛡 Спокойно, викинг. Я охраняю чат, а не спорю в таверне.",
-    "😂 Сейчас даже ленивый модератор проснулся бы от такого тона.",
-    "⚔️ Не трать ярость на бота. Рекламщики ждут где-то за углом.",
-    "🍺 Я на твоей стороне, пока ты не спамишь и не грубишь.",
-    "🤖 Сообщение принято. Ответ: чуть мягче, пожалуйста.",
-    "🪓 Виртуальный топор оставим для рекламы. Тут хватит спокойного разговора.",
-]
-
 
 def load_replies() -> dict[str, list[str]]:
     with REPLIES_PATH.open("r", encoding="utf-8") as file:
@@ -160,27 +111,3 @@ def reply_for(user_id: int, text: str, addressed: bool = False) -> str | None:
             return frequent
 
     return choose(f"user:{user_id}:{category}", REPLIES.get(category, REPLIES.get("fallback", [])), mood)
-
-
-def looks_rude(text: str) -> bool:
-    normalized = text.strip().lower()
-    return any(marker in normalized for marker in RUDE_MARKERS)
-
-
-def can_reply_rude(user_id: int) -> bool:
-    now = time.monotonic()
-    last = last_rude_reply_at.get(user_id, 0)
-    if now - last < RUDE_REPLY_COOLDOWN:
-        return False
-    last_rude_reply_at[user_id] = now
-    return True
-
-
-def rude_reply(user_id: int) -> str:
-    last_text = last_rude_reply_text.get(user_id)
-    available = [text for text in RUDE_REPLIES if text != last_text]
-    if not available:
-        available = RUDE_REPLIES
-    text = random.choice(available)
-    last_rude_reply_text[user_id] = text
-    return text

@@ -1,5 +1,17 @@
 # Police Bot Ultimate Release Candidate
 
+# Police Bot Ultimate v2.5
+
+## Join manager rebuild
+- New member verification was moved to `join_manager.py`.
+- Old passed-state cache was removed.
+- Both `new_chat_members` and `chat_member` updates are handled.
+- Duplicate processing protection was added for the same chat/user pair.
+- Every new human member is restricted before captcha is sent.
+- Active captcha state is saved in `join_state.json` and restored after Render restart.
+- Wrong answer and timeout remove the user with ban/unban and clear state.
+- Logs added: `JOIN DETECTED`, `RESTRICTED`, `CAPTCHA SENT`, `PASSED`, `TIMEOUT`, `KICKED`.
+
 ## Что умеет бот
 
 ### Режим "Молчаливый полицейский"
@@ -128,3 +140,11 @@
 - Явно включены updates `chat_member` при polling.
 - Добавлено журналирование входов/выходов.
 - Состояние капчи очищается при выходе, повторный вход снова требует капчу.
+
+
+## v2.5.1 — диагностика фильтра оскорблений
+
+- Добавлены подробные строки `MODERATION` в лог Render.
+- Для каждого сообщения видны: текст, найденные запрещённые маркеры, мета-обсуждение, адресность и принятое действие.
+- Нейтральные фразы «Неплохо кстати» и «Он видит скрытый мат» закреплены автоматическими тестами.
+- Архитектура капчи, антирекламы и разговорного режима не изменялась.

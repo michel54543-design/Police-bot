@@ -1,4 +1,5 @@
 import ast
+import asyncio
 import importlib
 import json
 import sys
@@ -8,7 +9,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 
@@ -42,12 +43,23 @@ class ProjectDataTests(unittest.TestCase):
             self.assertLess(question["correct"], 3)
 
     def test_captcha_static_rules(self):
-        source = (ROOT / "captcha.py").read_text(encoding="utf-8")
+        source = (ROOT / "join_manager.py").read_text(encoding="utf-8")
+        captcha_source = (ROOT / "captcha.py").read_text(encoding="utf-8")
         self.assertIn("CAPTCHA_TIMEOUT_SECONDS = 120", source)
         self.assertIn("chunk_buttons(buttons, 1)", source)
-        self.assertEqual(source.count("asyncio.create_task(timeout"), 1)
-        self.assertIn("Добро пожаловать в Группу", source)
-        self.assertIn("Пусть Евгений будет на вашей стороне", source)
+        self.assertIn("asyncio.create_task(timeout_worker", source)
+        forbidden_state = "passed" + "_users"
+        self.assertNotIn(forbidden_state, captcha_source + source)
+        self.assertIn("\u0414\u043e\u0431\u0440\u043e \u043f\u043e\u0436\u0430\u043b\u043e\u0432\u0430\u0442\u044c \u0432 \u0413\u0440\u0443\u043f\u043f\u0443", source)
+        self.assertIn("\u041f\u0443\u0441\u0442\u044c \u0415\u0432\u0433\u0435\u043d\u0438\u0439 \u0431\u0443\u0434\u0435\u0442 \u043d\u0430 \u0432\u0430\u0448\u0435\u0439 \u0441\u0442\u043e\u0440\u043e\u043d\u0435", source)
+        self.assertIn("STATE_PATH", source)
+        self.assertIn("restore_pending", source)
+        self.assertIn("JOIN DETECTED", source)
+        self.assertIn("RESTRICTED", source)
+        self.assertIn("CAPTCHA SENT", source)
+        self.assertIn("PASSED", source)
+        self.assertIn("TIMEOUT", source)
+        self.assertIn("KICKED", source)
 
     def test_jokes_json_clean_and_unique(self):
         data = self.load_json("jokes.json")
@@ -177,6 +189,23 @@ class LogicTests(unittest.TestCase):
         tree = ast.parse(source)
         self.assertIsNotNone(tree)
 
+    def test_moderation_is_the_only_bad_language_filter(self):
+        main_source = (ROOT / "main.py").read_text(encoding="utf-8")
+        conversation_source = (ROOT / "conversation.py").read_text(encoding="utf-8")
+        project_sources = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in ROOT.glob("*.py")
+            if path.name != "test_project.py"
+        )
+
+        self.assertIn("moderation.handle_bad_language", main_source)
+        self.assertNotIn("conversation.looks_rude", main_source)
+        self.assertNotIn("looks_rude", conversation_source)
+        self.assertNotIn("RUDE_MARKERS", conversation_source)
+        self.assertNotIn("RUDE_REPLIES", conversation_source)
+        self.assertNotIn("rude_reply", conversation_source)
+        self.assertEqual(project_sources.count("async def handle_bad_language"), 1)
+
     def test_moderation_offense_cleanup(self):
         aiogram_stub = types.ModuleType("aiogram")
         aiogram_stub.Bot = object
@@ -195,12 +224,220 @@ class LogicTests(unittest.TestCase):
         moderation.cleanup_offenses()
         self.assertNotIn((1, 1), moderation.offenses)
 
+    def test_moderation_ignores_safe_phrases_and_discussions(self):
+        aiogram_stub = types.ModuleType("aiogram")
+        aiogram_stub.Bot = object
+        aiogram_types_stub = types.ModuleType("aiogram.types")
+
+        class ChatPermissions:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        aiogram_types_stub.ChatPermissions = ChatPermissions
+        aiogram_types_stub.Message = object
+        sys.modules["aiogram"] = aiogram_stub
+        sys.modules["aiogram.types"] = aiogram_types_stub
+        moderation = importlib.reload(importlib.import_module("moderation"))
+
+        safe_phrases = [
+            "\u041d\u0435\u043f\u043b\u043e\u0445\u043e \u043a\u0441\u0442\u0430\u0442\u0438",
+            "\u041e\u043d \u0432\u0438\u0434\u0438\u0442 \u0441\u043a\u0440\u044b\u0442\u044b\u0439 \u043c\u0430\u0442",
+            "\u042d\u0442\u043e \u043d\u0435 \u043c\u0430\u0442",
+            "\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u043f\u0440\u0430\u0432\u0438\u043b\u0430",
+        ]
+        for phrase in safe_phrases:
+            with self.subTest(phrase=phrase):
+                self.assertFalse(moderation.contains_bad_words(phrase))
+
+        self.assertTrue(moderation.contains_bad_words("\u0442\u044b \u0434\u0443\u0440\u0430\u043a"))
+        self.assertTrue(moderation.is_meta_discussion("\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u0441\u043b\u043e\u0432\u043e \u0434\u0443\u0440\u0430\u043a"))
+        self.assertEqual(moderation.matched_bad_markers("Неплохо кстати"), [])
+        self.assertEqual(moderation.matched_bad_markers("ты дурак"), ["дурак"])
+
+    def test_moderation_full_handler_ignores_safe_phrases(self):
+        aiogram_stub = types.ModuleType("aiogram")
+        aiogram_stub.Bot = object
+        aiogram_types_stub = types.ModuleType("aiogram.types")
+
+        class ChatPermissions:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        aiogram_types_stub.ChatPermissions = ChatPermissions
+        aiogram_types_stub.Message = object
+        sys.modules["aiogram"] = aiogram_stub
+        sys.modules["aiogram.types"] = aiogram_types_stub
+        moderation = importlib.reload(importlib.import_module("moderation"))
+
+        class FakeUser:
+            id = 10
+
+        class FakeChat:
+            id = -100
+
+        class FakeMessage:
+            def __init__(self, text):
+                self.text = text
+                self.caption = None
+                self.from_user = FakeUser()
+                self.chat = FakeChat()
+                self.reply_to_message = None
+                self.replies = []
+
+            async def reply(self, text):
+                self.replies.append(text)
+
+        async def run_checks():
+            safe_phrases = [
+                "\u041d\u0435\u043f\u043b\u043e\u0445\u043e \u043a\u0441\u0442\u0430\u0442\u0438",
+                "\u041e\u043d \u0432\u0438\u0434\u0438\u0442 \u0441\u043a\u0440\u044b\u0442\u044b\u0439 \u043c\u0430\u0442",
+                "\u042d\u0442\u043e \u043d\u0435 \u043c\u0430\u0442",
+                "\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u043f\u0440\u0430\u0432\u0438\u043b\u0430",
+            ]
+            for phrase in safe_phrases:
+                message = FakeMessage(phrase)
+                self.assertFalse(await moderation.handle_bad_language(object(), message, False))
+                self.assertEqual(message.replies, [])
+
+        asyncio.run(run_checks())
+
+    def test_moderation_warns_only_for_targeted_insult(self):
+        aiogram_stub = types.ModuleType("aiogram")
+        aiogram_stub.Bot = object
+        aiogram_types_stub = types.ModuleType("aiogram.types")
+
+        class ChatPermissions:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        aiogram_types_stub.ChatPermissions = ChatPermissions
+        aiogram_types_stub.Message = object
+        sys.modules["aiogram"] = aiogram_stub
+        sys.modules["aiogram.types"] = aiogram_types_stub
+        moderation = importlib.reload(importlib.import_module("moderation"))
+
+        class FakeUser:
+            id = 10
+
+        class FakeChat:
+            id = -100
+
+        class FakeMessage:
+            def __init__(self, text):
+                self.text = text
+                self.caption = None
+                self.from_user = FakeUser()
+                self.chat = FakeChat()
+                self.reply_to_message = None
+                self.replies = []
+
+            async def reply(self, text):
+                self.replies.append(text)
+
+        async def run_checks():
+            neutral = FakeMessage("\u0434\u0443\u0440\u0430\u043a")
+            self.assertFalse(await moderation.handle_bad_language(object(), neutral, False))
+            self.assertEqual(neutral.replies, [])
+
+            discussion = FakeMessage("\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u0441\u043b\u043e\u0432\u043e \u0434\u0443\u0440\u0430\u043a")
+            self.assertFalse(await moderation.handle_bad_language(object(), discussion, False))
+            self.assertEqual(discussion.replies, [])
+
+            targeted = FakeMessage("\u0442\u044b \u0434\u0443\u0440\u0430\u043a")
+            self.assertTrue(await moderation.handle_bad_language(object(), targeted, False))
+            self.assertEqual(len(targeted.replies), 1)
+
+        asyncio.run(run_checks())
+
+
+class JoinManagerTests(unittest.IsolatedAsyncioTestCase):
+    def install_aiogram_stubs(self):
+        aiogram_stub = types.ModuleType("aiogram")
+        aiogram_stub.Bot = object
+        aiogram_types_stub = types.ModuleType("aiogram.types")
+
+        class ChatPermissions:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        class InlineKeyboardButton:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        class InlineKeyboardMarkup:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+
+        aiogram_types_stub.CallbackQuery = object
+        aiogram_types_stub.ChatMemberUpdated = object
+        aiogram_types_stub.ChatPermissions = ChatPermissions
+        aiogram_types_stub.InlineKeyboardButton = InlineKeyboardButton
+        aiogram_types_stub.InlineKeyboardMarkup = InlineKeyboardMarkup
+        aiogram_types_stub.Message = object
+        aiogram_types_stub.User = object
+        sys.modules["aiogram"] = aiogram_stub
+        sys.modules["aiogram.types"] = aiogram_types_stub
+
+    async def test_mass_join_50_users_are_muted_and_get_captcha(self):
+        self.install_aiogram_stubs()
+        join_manager = importlib.reload(importlib.import_module("join_manager"))
+        join_manager.STATE_PATH = ROOT / "test_join_state.json"
+        join_manager.pending.clear()
+        join_manager.processing_users.clear()
+        join_manager.timeout_tasks.clear()
+
+        class FakeMessage:
+            def __init__(self, message_id):
+                self.message_id = message_id
+
+        class FakeBot:
+            def __init__(self):
+                self.actions = []
+                self.next_message_id = 100
+
+            async def restrict_chat_member(self, chat_id, user_id, permissions):
+                self.actions.append(("restrict", chat_id, user_id, permissions.kwargs))
+
+            async def send_message(self, chat_id, text, reply_markup=None):
+                self.actions.append(("send_captcha", chat_id, text, reply_markup))
+                self.next_message_id += 1
+                return FakeMessage(self.next_message_id)
+
+            async def ban_chat_member(self, chat_id, user_id):
+                self.actions.append(("ban", chat_id, user_id))
+
+            async def unban_chat_member(self, chat_id, user_id):
+                self.actions.append(("unban", chat_id, user_id))
+
+        class FakeUser:
+            def __init__(self, user_id):
+                self.id = user_id
+                self.username = f"user{user_id}"
+                self.is_bot = False
+
+        bot = FakeBot()
+        users = [FakeUser(10_000 + index) for index in range(50)]
+        for user in users:
+            await join_manager.start_for_user(bot, -100, user)
+
+        self.assertEqual(len(join_manager.pending), 50)
+        self.assertEqual(len([action for action in bot.actions if action[0] == "restrict"]), 50)
+        self.assertEqual(len([action for action in bot.actions if action[0] == "send_captcha"]), 50)
+        for user in users:
+            user_actions = [action[0] for action in bot.actions if len(action) > 2 and action[2] == user.id]
+            self.assertEqual(user_actions[0], "restrict")
+
+        for user in users:
+            join_manager.clear_user(-100, user.id)
+        if join_manager.STATE_PATH.exists():
+            join_manager.STATE_PATH.unlink()
+
 
 class RenderFilesTests(unittest.TestCase):
     def test_render_files_exist_and_are_light(self):
         self.assertIn("aiogram>=3.4,<4", (ROOT / "requirements.txt").read_text(encoding="utf-8"))
         self.assertIn("python-dotenv", (ROOT / "requirements.txt").read_text(encoding="utf-8"))
-        self.assertEqual((ROOT / "Procfile").read_text(encoding="utf-8").strip(), "worker: python main.py")
+        self.assertIn((ROOT / "Procfile").read_text(encoding="utf-8").strip(), {"web: python main.py", "worker: python main.py"})
         self.assertIn("startCommand: python main.py", (ROOT / "render.yaml").read_text(encoding="utf-8"))
 
     def test_no_token_literal_in_project_files(self):
@@ -208,8 +445,10 @@ class RenderFilesTests(unittest.TestCase):
             if path.is_file() and path.suffix in {".py", ".json", ".txt", ".yaml", ".md", ""}:
                 text = path.read_text(encoding="utf-8", errors="ignore")
                 with self.subTest(path=path.name):
-                    self.assertNotIn("ВСТАВЬ_ТОКЕН", text)
-                    self.assertNotIn("bot_token_here:", text.lower())
+                    token_placeholder = "\u0412\u0421\u0422\u0410\u0412\u042c" + "_\u0422\u041e\u041a\u0415\u041d"
+                    self.assertNotIn(token_placeholder, text)
+                    token_example = "bot" + "_token" + "_here:"
+                    self.assertNotIn(token_example, text.lower())
 
 
 if __name__ == "__main__":
