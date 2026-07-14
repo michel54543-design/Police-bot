@@ -2,13 +2,13 @@ import asyncio
 import json
 import logging
 import os
-
-from aiohttp import web
+import re
 from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
+from aiohttp import web
 from dotenv import load_dotenv
 
 import captcha
@@ -83,6 +83,11 @@ def is_yura(message: Message) -> bool:
 
 
 def addressed_to_bot(message: Message) -> bool:
+    """Возвращает True только при явном обращении к Police.
+
+    Обычное упоминание слова в середине разговора не считается обращением.
+    Модерация рекламы и нарушений выполняется до этой проверки.
+    """
     chat_type = getattr(message.chat.type, "value", message.chat.type)
     if chat_type == "private":
         return True
@@ -91,13 +96,36 @@ def addressed_to_bot(message: Message) -> bool:
     if BOT_ID is not None and reply_user is not None and reply_user.id == BOT_ID:
         return True
 
-    text = (message.text or message.caption or "").lower()
-    if BOT_USERNAME and f"@{BOT_USERNAME.lower()}" in text:
-        return True
-    if BOT_NAME and BOT_NAME.lower() in text:
+    raw_text = message.text or message.caption or ""
+    text = " ".join(raw_text.lower().strip().split())
+    if not text:
+        return False
+
+    if BOT_USERNAME and re.search(
+        rf"(?<![\w@])@{re.escape(BOT_USERNAME.lower())}(?!\w)", text
+    ):
         return True
 
-    return "police" in text or "бот" in text
+    # Явное обращение в начале: «Police», «Police, привет», «Police ты здесь?»
+    if re.match(r"^police(?:$|[\s,.:;!?—-])", text):
+        return True
+
+    # Явное обращение в конце: «ответь, Police»
+    if re.search(r"(?:^|[\s,.:;!?—-])police[.!?]*$", text):
+        return True
+
+    # Слово «бот» учитывается только как отдельное обращение, а не внутри фразы.
+    if re.match(r"^бот(?:$|[,.:;!?—-])", text) or re.search(
+        r"(?:^|[,.:;!?—-]\s*)бот[.!?]*$", text
+    ):
+        return True
+
+    if BOT_NAME:
+        name = " ".join(BOT_NAME.lower().strip().split())
+        if text == name or text.startswith(name + ",") or text.startswith(name + "!") or text.startswith(name + "?"):
+            return True
+
+    return False
 
 
 def owner_reply() -> str:
@@ -214,18 +242,21 @@ async def all_messages(message: Message) -> None:
     if not message.from_user:
         return
 
-    if captcha.is_pending(message.chat.id, message.from_user.id):
+    text = message.text or message.caption or ""
+    if text and looks_like_ad(text):
         await safe_delete_message(bot, message.chat.id, message.message_id)
         return
 
-    text = message.text or message.caption or ""
-    if text and looks_like_ad(text):
+    if captcha.is_pending(message.chat.id, message.from_user.id):
         await safe_delete_message(bot, message.chat.id, message.message_id)
         return
 
     addressed = addressed_to_bot(message)
 
     if await moderation.handle_bad_language(bot, message, addressed):
+        return
+
+    if not addressed:
         return
 
     if is_owner(message) and addressed:
@@ -238,7 +269,7 @@ async def all_messages(message: Message) -> None:
         await message.reply(yura_reply())
         return
 
-    if text and addressed and conversation.looks_rude(text) and conversation.can_reply_rude(message.from_user.id):
+    if text and conversation.looks_rude(text) and conversation.can_reply_rude(message.from_user.id):
         await human_pause(message)
         rude_text = conversation.rude_reply(message.from_user.id)
         if is_yura(message):
@@ -248,13 +279,13 @@ async def all_messages(message: Message) -> None:
 
     if message.text:
         conversation.remember(message.from_user.id, message.text)
-        reply = conversation.reply_for(message.from_user.id, message.text, addressed=addressed)
+        reply = conversation.reply_for(message.from_user.id, message.text, addressed=True)
         if reply:
             await human_pause(message)
             await message.answer(style(reply))
 
 
-async def health(_: web.Request) -> web.Response:
+async def health(request: web.Request) -> web.Response:
     return web.Response(text="Police Bot is running")
 
 
@@ -276,16 +307,17 @@ async def main() -> None:
     global BOT_NAME
     global BOT_USERNAME
 
-    runner = await start_health_server()
+    health_runner = await start_health_server()
     try:
-        await bot.delete_webhook(drop_pending_updates=True)
         me = await bot.get_me()
         BOT_ID = me.id
         BOT_USERNAME = me.username
         BOT_NAME = me.full_name
+        await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:
-        await runner.cleanup()
+        await health_runner.cleanup()
+        await bot.session.close()
 
 
 if __name__ == "__main__":

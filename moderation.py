@@ -45,14 +45,6 @@ BAD_WORD_MARKERS = [
     "мраз",
 ]
 
-UNTARGETED_REPLIES = [
-    "🍺 Сурово сказано. Но чат лучше держать спокойным.",
-    "🛡 Police услышал эмоции и сделал вид, что протокол занят.",
-    "😂 Бывает. Главное, без наездов на людей.",
-    "🤖 Мат принят как шум таверны. Продолжаем без пожара.",
-    "⚔️ Энергию лучше оставить для рекламщиков.",
-]
-
 WARNINGS_FIRST = [
     "🛡 Спокойнее. Без оскорблений в адрес других участников.",
     "⚠️ Первое предупреждение: держим нормальный тон.",
@@ -191,8 +183,6 @@ async def handle_bad_language(bot: Bot, message: Message, addressed_to_bot: bool
         return False
 
     if not is_targeted(message, addressed_to_bot):
-        if random.random() < 0.35:
-            await safe_reply(message, random.choice(UNTARGETED_REPLIES))
         return True
 
     level = register_offense(message.chat.id, message.from_user.id)

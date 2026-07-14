@@ -4,8 +4,6 @@ import time
 from collections import deque
 from pathlib import Path
 
-from config import ALLOW_DIRTY_JOKES
-
 
 JOKES_PATH = Path(__file__).resolve().parent / "jokes.json"
 COOLDOWN_SECONDS = 60
@@ -38,17 +36,6 @@ COOLDOWN_REPLIES = [
 ]
 
 
-DIRTY_MARKERS = (
-    "бля", "пизд", "хуй", "хуе", "нахуй", "заеб", "ебал", "ебан",
-    "охуел", "охрен", "сука", "жоп", "хер", "нахрен",
-)
-
-
-def is_dirty(text: str) -> bool:
-    lowered = text.lower().replace("ё", "е")
-    return any(marker in lowered for marker in DIRTY_MARKERS)
-
-
 def load() -> list[str]:
     with JOKES_PATH.open("r", encoding="utf-8") as file:
         data = json.load(file)
@@ -56,11 +43,7 @@ def load() -> list[str]:
         items = data.get("jokes", [])
     else:
         items = data
-
-    jokes = [str(item).strip() for item in items if str(item).strip()]
-    if not ALLOW_DIRTY_JOKES:
-        jokes = [item for item in jokes if not is_dirty(item)]
-    return jokes
+    return [str(item).strip() for item in items if str(item).strip()]
 
 
 JOKES = load()

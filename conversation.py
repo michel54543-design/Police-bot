@@ -142,6 +142,10 @@ def detect_category(text: str, addressed: bool, continuation: bool) -> str | Non
 
 
 def reply_for(user_id: int, text: str, addressed: bool = False) -> str | None:
+    if not addressed:
+        cleanup(user_id)
+        return None
+
     continuation = is_dialog_continuation(user_id)
     category = detect_category(text, addressed, continuation)
     if category is None:
