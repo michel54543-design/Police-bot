@@ -24,6 +24,11 @@ BASE_DIR = Path(__file__).resolve().parent
 QUESTIONS_PATH = BASE_DIR / "captcha_questions.json"
 STATE_PATH = BASE_DIR / "join_state.json"
 CAPTCHA_TIMEOUT_SECONDS = 120
+WELCOME_TEXT = (
+    "🛡 Добро пожаловать в Группу!\n\n"
+    "Пусть Евгений будет на вашей стороне! ⚔️\n\n"
+    "Не флудите, не спамьте и приятного общения! 🍻"
+)
 
 pending: dict[tuple[int, int], dict[str, Any]] = {}
 processing_users: set[tuple[int, int]] = set()
@@ -335,12 +340,7 @@ async def pass_user(bot: Bot, chat_id: int, user_id: int) -> None:
         logging.exception("UNRESTRICT ERROR chat_id=%s user_id=%s: %r", chat_id, user_id, error)
     clear_user(chat_id, user_id)
     try:
-        await bot.send_message(
-            chat_id,
-            "🛡 Добро пожаловать в Группу!\n\n"
-            "Пусть Евгений будет на вашей стороне! ⚔️\n\n"
-            "Не флудите, не спамьте и приятного общения! 🍻",
-        )
+        await bot.send_message(chat_id, WELCOME_TEXT)
     except Exception as error:
         logging.exception("WELCOME SEND ERROR chat_id=%s user_id=%s: %r", chat_id, user_id, error)
 

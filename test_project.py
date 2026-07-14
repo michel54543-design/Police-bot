@@ -60,6 +60,8 @@ class ProjectDataTests(unittest.TestCase):
         self.assertIn("PASSED", source)
         self.assertIn("TIMEOUT", source)
         self.assertIn("KICKED", source)
+        self.assertIn("WELCOME_TEXT", source)
+        self.assertIn("Не флудите, не спамьте и приятного общения! 🍻", source)
 
     def test_jokes_json_clean_and_unique(self):
         data = self.load_json("jokes.json")
