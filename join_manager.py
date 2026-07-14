@@ -56,24 +56,33 @@ def member_status(value: object) -> str:
     return str(getattr(value, "value", value))
 
 
+def member_is_present(chat_member: object) -> bool:
+    """Return whether the user is actually present in the chat.
+
+    Telegram can report both the old and new status as ``restricted`` while
+    only ``is_member`` changes from False to True. Looking only at the status
+    therefore misses some joins made through an invite link.
+    """
+    status = member_status(getattr(chat_member, "status", ""))
+    if status in {"member", "administrator", "creator"}:
+        return True
+    if status == "restricted":
+        return bool(getattr(chat_member, "is_member", False))
+    return False
+
+
 def user_just_joined(event: ChatMemberUpdated) -> bool:
-    old_status = member_status(event.old_chat_member.status)
-    new_status = member_status(event.new_chat_member.status)
-    return old_status in {"left", "kicked"} and new_status in {
-        "member",
-        "restricted",
-        "administrator",
-        "creator",
-    }
+    return (
+        not member_is_present(event.old_chat_member)
+        and member_is_present(event.new_chat_member)
+    )
 
 
 def user_just_left(event: ChatMemberUpdated) -> bool:
-    old_status = member_status(event.old_chat_member.status)
-    new_status = member_status(event.new_chat_member.status)
-    return old_status in {"member", "restricted", "administrator", "creator"} and new_status in {
-        "left",
-        "kicked",
-    }
+    return (
+        member_is_present(event.old_chat_member)
+        and not member_is_present(event.new_chat_member)
+    )
 
 
 def is_pending(chat_id: int, user_id: int) -> bool:
@@ -292,12 +301,16 @@ async def handle_chat_member_update(bot: Bot, event: ChatMemberUpdated) -> None:
     user = event.new_chat_member.user
     old_status = member_status(event.old_chat_member.status)
     new_status = member_status(event.new_chat_member.status)
+    old_present = member_is_present(event.old_chat_member)
+    new_present = member_is_present(event.new_chat_member)
     logging.info(
-        "JOIN MEMBER UPDATE chat_id=%s user_id=%s %s -> %s",
+        "JOIN MEMBER UPDATE chat_id=%s user_id=%s %s(is_member=%s) -> %s(is_member=%s)",
         event.chat.id,
         user.id,
         old_status,
+        old_present,
         new_status,
+        new_present,
     )
     if user_just_left(event):
         clear_user(event.chat.id, user.id)

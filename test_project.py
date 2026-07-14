@@ -61,6 +61,8 @@ class ProjectDataTests(unittest.TestCase):
         self.assertIn("TIMEOUT", source)
         self.assertIn("KICKED", source)
         self.assertIn("WELCOME_TEXT", source)
+        self.assertIn("def member_is_present", source)
+        self.assertIn("getattr(chat_member, \"is_member\", False)", source)
         self.assertIn("Не флудите, не спамьте и приятного общения! 🍻", source)
 
     def test_jokes_json_clean_and_unique(self):
@@ -181,6 +183,7 @@ class LogicTests(unittest.TestCase):
         self.assertLessEqual(len(conversation.memory[77]), 8)
         conversation.last_explicit_address_at[77] = time.monotonic() - conversation.MEMORY_SECONDS - 1
         self.assertFalse(conversation.is_dialog_continuation(77))
+
 
     def test_moderation_static_rules(self):
         source = (ROOT / "moderation.py").read_text(encoding="utf-8")
