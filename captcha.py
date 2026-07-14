@@ -99,8 +99,14 @@ async def unmute(bot: Bot, chat_id: int, user_id: int) -> None:
 
 
 async def start(bot: Bot, message: Message, user: User) -> None:
-    await mute(bot, message.chat.id, user.id)
-    await send_new_question(bot, message.chat.id, user.id)
+    await start_for_chat(bot, message.chat.id, user)
+
+
+async def start_for_chat(bot: Bot, chat_id: int, user: User) -> None:
+    if is_pending(chat_id, user.id) or has_passed(chat_id, user.id):
+        return
+    await mute(bot, chat_id, user.id)
+    await send_new_question(bot, chat_id, user.id)
 
 
 async def send_new_question(bot: Bot, chat_id: int, user_id: int) -> None:

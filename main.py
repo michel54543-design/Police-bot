@@ -7,7 +7,7 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, User
 from aiohttp import web
 from dotenv import load_dotenv
 
@@ -55,19 +55,62 @@ OWNER_MESSAGES = load_list("owner_replies.json")
 YURA_MESSAGES = load_list("yura_replies.json")
 
 
-def looks_like_ad(text: str) -> bool:
-    lowered = text.lower()
+def looks_like_ad(message: Message) -> bool:
+    """Проверяет текст, подпись и Telegram-сущности на явную рекламу.
+
+    Проверка выполняется до разговорного режима, поэтому Police может молчать
+    в обычном чате, но продолжает удалять рекламные сообщения.
+    """
+    text = message.text or message.caption or ""
+    lowered = " ".join(text.lower().split())
+
+    # Любая кликабельная внешняя ссылка считается подозрительной рекламой.
+    for entity in list(message.entities or []) + list(message.caption_entities or []):
+        entity_type = getattr(entity.type, "value", entity.type)
+        if entity_type in {"url", "text_link"}:
+            return True
+
     markers = [
-        "http://",
-        "https://",
-        "t.me/",
-        "telegram.me/",
-        "заработок",
-        "инвест",
-        "казино",
-        "ставки",
+        "http://", "https://", "t.me/", "telegram.me/", "www.",
+        "заработок", "заработать", "подработка", "доход без",
+        "инвест", "крипт", "казино", "ставки", "букмекер",
+        "розыгрыш", "промокод", "пиши в личку", "пишите в личку",
+        "переходи по ссылке", "подписывайся", "подпишись на канал",
+        "ищу людей", "набор в команду", "удаленная работа",
     ]
     return any(marker in lowered for marker in markers)
+
+
+def user_just_joined(event: ChatMemberUpdated) -> bool:
+    old_status = getattr(event.old_chat_member.status, "value", event.old_chat_member.status)
+    new_status = getattr(event.new_chat_member.status, "value", event.new_chat_member.status)
+    return old_status in {"left", "kicked"} and new_status in {
+        "member", "restricted", "administrator"
+    }
+
+
+async def process_new_user(message: Message | None, chat_id: int, user: User) -> None:
+    """Запускает защиту нового участника независимо от типа join-события."""
+    if user.id == BOT_ID:
+        return
+    if captcha.is_pending(chat_id, user.id) or captcha.has_passed(chat_id, user.id):
+        return
+
+    if user.is_bot:
+        try:
+            await bot.ban_chat_member(chat_id, user.id)
+        except Exception as error:
+            logging.exception("Ошибка бана вошедшего бота: %r", error)
+        return
+
+    try:
+        if message is not None:
+            await captcha.start(bot, message, user)
+        else:
+            await captcha.start_for_chat(bot, chat_id, user)
+        logging.info("Капча выдана новому участнику chat_id=%s user_id=%s", chat_id, user.id)
+    except Exception as error:
+        logging.exception("Не удалось запустить капчу chat_id=%s user_id=%s: %r", chat_id, user.id, error)
 
 
 def is_owner(message: Message) -> bool:
@@ -140,13 +183,15 @@ def yura_reply() -> str:
 async def new_members(message: Message) -> None:
     await safe_delete_message(bot, message.chat.id, message.message_id)
     for user in message.new_chat_members:
-        if user.is_bot:
-            try:
-                await bot.ban_chat_member(message.chat.id, user.id)
-            except Exception as error:
-                print("Ошибка бана бота:", repr(error))
-            continue
-        await captcha.start(bot, message, user)
+        await process_new_user(message, message.chat.id, user)
+
+
+@dp.chat_member()
+async def chat_member_join(event: ChatMemberUpdated) -> None:
+    """Резервный обработчик: ловит входы, которые не пришли как service message."""
+    if not user_just_joined(event):
+        return
+    await process_new_user(None, event.chat.id, event.new_chat_member.user)
 
 
 @dp.callback_query(F.data.startswith("captcha:"))
@@ -243,7 +288,7 @@ async def all_messages(message: Message) -> None:
         return
 
     text = message.text or message.caption or ""
-    if text and looks_like_ad(text):
+    if looks_like_ad(message):
         await safe_delete_message(bot, message.chat.id, message.message_id)
         return
 
