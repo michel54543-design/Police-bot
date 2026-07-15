@@ -55,30 +55,41 @@ OWNER_MESSAGES = load_list("owner_replies.json")
 YURA_MESSAGES = load_list("yura_replies.json")
 
 
-def looks_like_ad(message: Message) -> bool:
-    """Проверяет текст, подпись и Telegram-сущности на явную рекламу.
+def looks_like_ad(message: Message, *, allow_plain_links: bool) -> bool:
+    """Проверяет сообщение на рекламу, не запрещая обычные ссылки доверенным участникам.
 
-    Проверка выполняется до разговорного режима, поэтому Police может молчать
-    в обычном чате, но продолжает удалять рекламные сообщения.
+    Участник считается доверенным, если он не находится в активной капче.
+    Поэтому старые участники группы и пользователи, успешно прошедшие капчу,
+    могут отправлять обычные ссылки. Рекламные формулировки, мошеннические
+    предложения и массовые призывы всё равно блокируются для всех.
     """
     text = message.text or message.caption or ""
     lowered = " ".join(text.lower().split())
 
-    # Любая кликабельная внешняя ссылка считается подозрительной рекламой.
+    has_clickable_link = False
     for entity in list(message.entities or []) + list(message.caption_entities or []):
         entity_type = getattr(entity.type, "value", entity.type)
         if entity_type in {"url", "text_link"}:
-            return True
+            has_clickable_link = True
+            break
 
-    markers = [
-        "http://", "https://", "t.me/", "telegram.me/", "www.",
+    has_text_link = any(
+        marker in lowered
+        for marker in ("http://", "https://", "t.me/", "telegram.me/", "www.")
+    )
+
+    # Само наличие ссылки не считается рекламой для доверенного участника.
+    if (has_clickable_link or has_text_link) and not allow_plain_links:
+        return True
+
+    ad_markers = [
         "заработок", "заработать", "подработка", "доход без",
         "инвест", "крипт", "казино", "ставки", "букмекер",
         "розыгрыш", "промокод", "пиши в личку", "пишите в личку",
         "переходи по ссылке", "подписывайся", "подпишись на канал",
         "ищу людей", "набор в команду", "удаленная работа",
     ]
-    return any(marker in lowered for marker in markers)
+    return any(marker in lowered for marker in ad_markers)
 
 
 def is_owner(message: Message) -> bool:
@@ -234,11 +245,15 @@ async def all_messages(message: Message) -> None:
         return
 
     text = message.text or message.caption or ""
-    if looks_like_ad(message):
+    pending_captcha = join_manager.is_pending(message.chat.id, message.from_user.id)
+
+    # Старые участники и прошедшие капчу могут публиковать обычные ссылки.
+    # Рекламные формулировки по-прежнему удаляются у всех.
+    if looks_like_ad(message, allow_plain_links=not pending_captcha):
         await safe_delete_message(bot, message.chat.id, message.message_id)
         return
 
-    if join_manager.is_pending(message.chat.id, message.from_user.id):
+    if pending_captcha:
         await safe_delete_message(bot, message.chat.id, message.message_id)
         return
 

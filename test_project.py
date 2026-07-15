@@ -455,6 +455,13 @@ class RenderFilesTests(unittest.TestCase):
                     token_example = "bot" + "_token" + "_here:"
                     self.assertNotIn(token_example, text.lower())
 
+    def test_plain_links_allowed_for_trusted_members_but_ads_blocked(self):
+        source = (ROOT / "main.py").read_text(encoding="utf-8")
+        self.assertIn("def looks_like_ad(message: Message, *, allow_plain_links: bool)", source)
+        self.assertIn("if (has_clickable_link or has_text_link) and not allow_plain_links", source)
+        self.assertIn("allow_plain_links=not pending_captcha", source)
+        self.assertIn("Рекламные формулировки", source)
+
 
 if __name__ == "__main__":
     unittest.main()
