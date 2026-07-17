@@ -169,7 +169,7 @@ async def chat_member_update(event) -> None:
     await join_manager.handle_chat_member_update(bot, event)
 
 
-@dp.callback_query(F.data.startswith("verify:"))
+@dp.callback_query(F.data == "verify_shared")
 async def verify_callback(callback) -> None:
     await join_manager.handle_verify_button(bot, callback)
 

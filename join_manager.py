@@ -52,8 +52,11 @@ WELCOME_TEXT = (
 pending: dict[tuple[int, int], dict[str, Any]] = {}
 processing_users: set[tuple[int, int]] = set()
 timeout_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
-group_notice_messages: dict[tuple[int, int], int] = {}
-group_notice_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
+shared_notice_messages: dict[int, int] = {}
+shared_notice_locks: dict[int, asyncio.Lock] = {}
+# Совместимость со старой очисткой состояния в тестах и при обновлении.
+group_notice_messages = shared_notice_messages
+group_notice_tasks: dict[int, asyncio.Task[None]] = {}
 BOT_ID: int | None = None
 BOT_USERNAME: str | None = None
 
@@ -182,24 +185,16 @@ async def _delete_raid_alert_later(bot: Bot, chat_id: int, message_id: int) -> N
 
 
 async def send_raid_started_alert(bot: Bot, chat_id: int) -> None:
-    global raid_alert_task
-    text = (
-        "🚨 ВНИМАНИЕ! АТАКА БОТОВ НА ГРУППУ!\n\n"
-        "🛡 Police Bot автоматически включил режим защиты «ОСАДА».\n"
-        "🤖 Все новые участники направлены на проверку.\n"
-        "✅ Обычным участникам ничего делать не нужно."
-    )
+    # При осаде не создаём отдельное сообщение: обновляем общую кнопку проверки.
     try:
-        message = await bot.send_message(chat_id, text)
-        if raid_alert_task is not None and not raid_alert_task.done():
-            raid_alert_task.cancel()
-        raid_alert_task = asyncio.create_task(_delete_raid_alert_later(bot, chat_id, message.message_id))
+        await refresh_shared_notice(bot, chat_id, force_show=True)
     except Exception as error:
         logging.exception("RAID START ALERT ERROR chat_id=%s: %r", chat_id, error)
 
 
 async def send_raid_finished_alert(bot: Bot, chat_id: int) -> None:
     global raid_alert_task
+    await _delete_shared_notice(bot, chat_id)
     text = (
         "🏆 АТАКА ОТРАЖЕНА!\n\n"
         "✅ Режим «ОСАДА» завершён.\n"
@@ -378,81 +373,115 @@ def clear_user(chat_id: int, user_id: int) -> None:
     processing_users.discard((chat_id, user_id))
     cancel_timer(chat_id, user_id)
     save_state()
+    schedule_shared_notice_refresh(chat_id)
 
 
-async def delete_group_notice_later(bot: Bot, chat_id: int, user_id: int, message_id: int) -> None:
-    key = (chat_id, user_id)
-    try:
-        await asyncio.sleep(GROUP_NOTICE_SECONDS)
-        if group_notice_messages.get(key) == message_id:
-            await safe_delete_message(bot, chat_id, message_id)
-            group_notice_messages.pop(key, None)
-            group_notice_tasks.pop(key, None)
-    except asyncio.CancelledError:
-        raise
-    except Exception as error:
-        logging.exception("GROUP NOTICE DELETE ERROR chat_id=%s user_id=%s: %r", chat_id, user_id, error)
+async def _delete_shared_notice(bot: Bot, chat_id: int) -> None:
+    message_id = shared_notice_messages.pop(chat_id, None)
+    if message_id is not None:
+        await safe_delete_message(bot, chat_id, message_id)
 
 
-def verification_keyboard(user_id: int) -> InlineKeyboardMarkup:
+def shared_verification_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
                 text="✅ Пройти проверку",
-                callback_data=f"verify:{user_id}",
+                callback_data="verify_shared",
             )
         ]]
     )
 
 
-async def show_group_notice_once(bot: Bot, chat_id: int, user: User) -> None:
-    key = (chat_id, user.id)
-    if key in group_notice_messages:
-        return
-    username = getattr(user, "username", None)
-    full_name = getattr(user, "full_name", None) or str(user.id)
-    name = f"@{username}" if username else full_name
-    text = (
-        f"🔒 {name}, для доступа к чату пройдите проверку.\n\n"
-        "Нажмите кнопку ниже — она предназначена только для вас."
+def waiting_private_count(chat_id: int) -> int:
+    return sum(
+        1
+        for (pending_chat_id, _), data in pending.items()
+        if pending_chat_id == chat_id and str(data.get("delivery")) == "waiting_private"
     )
-    try:
-        notice = await bot.send_message(
-            chat_id,
-            text,
-            reply_markup=verification_keyboard(user.id),
+
+
+def shared_notice_text(chat_id: int) -> str:
+    count = waiting_private_count(chat_id)
+    if raid_mode:
+        return (
+            "🚨 ВНИМАНИЕ! ОБНАРУЖЕНА МАССОВАЯ АТАКА НА ГРУППУ!\n\n"
+            "🛡 Police Bot автоматически включил режим «ОСАДА».\n"
+            "🔒 Все новые участники проходят проверку перед доступом к чату.\n\n"
+            f"⏳ Ожидают проверку: {count}\n\n"
+            "Если вы только что вступили — нажмите кнопку ниже."
         )
-    except Exception as error:
-        logging.exception("GROUP NOTICE SEND ERROR chat_id=%s user_id=%s: %r", chat_id, user.id, error)
-        return
-    group_notice_messages[key] = notice.message_id
-    old_task = group_notice_tasks.pop(key, None)
-    if old_task is not None:
-        old_task.cancel()
-    group_notice_tasks[key] = asyncio.create_task(
-        delete_group_notice_later(bot, chat_id, user.id, notice.message_id)
+    return (
+        "🔒 Новые участники ожидают проверки.\n\n"
+        f"⏳ В очереди: {count}\n\n"
+        "Если вы только что вступили — нажмите кнопку ниже."
     )
+
+
+async def refresh_shared_notice(bot: Bot, chat_id: int, force_show: bool = False) -> None:
+    lock = shared_notice_locks.setdefault(chat_id, asyncio.Lock())
+    async with lock:
+        count = waiting_private_count(chat_id)
+        message_id = shared_notice_messages.get(chat_id)
+        if count <= 0 and not raid_mode and not force_show:
+            if message_id is not None:
+                await _delete_shared_notice(bot, chat_id)
+            return
+        text = shared_notice_text(chat_id)
+        if message_id is not None:
+            try:
+                await bot.edit_message_text(
+                    text=text,
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    reply_markup=shared_verification_keyboard(),
+                )
+                return
+            except Exception as error:
+                # Не создаём дубликат даже при временной ошибке редактирования.
+                logging.info("SHARED NOTICE EDIT FAILED chat_id=%s: %r", chat_id, error)
+                return
+        try:
+            notice = await bot.send_message(
+                chat_id,
+                text,
+                reply_markup=shared_verification_keyboard(),
+            )
+            shared_notice_messages[chat_id] = notice.message_id
+        except Exception as error:
+            logging.exception("SHARED NOTICE SEND ERROR chat_id=%s: %r", chat_id, error)
+
+
+def schedule_shared_notice_refresh(chat_id: int) -> None:
+    if raid_bot is None:
+        return
+    try:
+        asyncio.get_running_loop().create_task(refresh_shared_notice(raid_bot, chat_id))
+    except RuntimeError:
+        pass
+
+
+async def show_group_notice_once(bot: Bot, chat_id: int, user: User) -> None:
+    # Одно общее сообщение на всю очередь, независимо от числа вступивших.
+    await refresh_shared_notice(bot, chat_id, force_show=True)
 
 
 async def handle_verify_button(bot: Bot, callback: CallbackQuery) -> None:
-    if not callback.from_user or not callback.data:
+    if not callback.from_user:
         return
-    try:
-        expected_user_id = int(callback.data.split(":", 1)[1])
-    except (IndexError, ValueError):
-        await callback.answer("Ошибка кнопки проверки.", show_alert=True)
-        return
-    if callback.from_user.id != expected_user_id:
-        await callback.answer("⛔ Эта кнопка предназначена не для вас.", show_alert=True)
-        return
-    matches = [chat_id for (chat_id, user_id) in pending if user_id == expected_user_id]
+    user_id = callback.from_user.id
+    matches = [
+        chat_id
+        for (chat_id, pending_user_id), data in pending.items()
+        if pending_user_id == user_id and str(data.get("delivery")) == "waiting_private"
+    ]
     if not matches:
-        await callback.answer("Проверка уже завершена.", show_alert=True)
+        await callback.answer("ℹ️ Проверка вам не требуется.", show_alert=True)
         return
     if not BOT_USERNAME:
         await callback.answer("Откройте личный чат с ботом и нажмите Start.", show_alert=True)
         return
-    deep_link = f"https://t.me/{BOT_USERNAME}?start=verify_{matches[0]}_{expected_user_id}"
+    deep_link = f"https://t.me/{BOT_USERNAME}?start=verify_{matches[0]}_{user_id}"
     await callback.answer(url=deep_link)
 
 
@@ -563,6 +592,7 @@ async def send_pending_private_captcha(bot: Bot, chat_id: int, user_id: int) -> 
     data["delivery"] = "private"
     save_state()
     logging.info("CAPTCHA SENT AFTER START chat_id=%s user_id=%s message_id=%s", chat_id, user_id, captcha_message.message_id)
+    await refresh_shared_notice(bot, chat_id)
     return True
 
 
