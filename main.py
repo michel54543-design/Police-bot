@@ -19,6 +19,7 @@ import moderation
 import predictions
 import stories
 import toasts
+import stats
 from personality import style
 from reply_selector import choose
 from utils import human_pause, safe_delete_message
@@ -227,6 +228,36 @@ async def prediction_command(message: Message) -> None:
     await safe_answer(message, predictions.get_prediction(message.from_user.id))
 
 
+@dp.message(Command("police", ignore_case=True))
+async def police_command(message: Message) -> None:
+    """Показывает статистику только администраторам группы."""
+    if not message.from_user:
+        return
+    if join_manager.is_pending(message.chat.id, message.from_user.id):
+        return
+
+    chat_type = getattr(message.chat.type, "value", message.chat.type)
+    if chat_type not in {"group", "supergroup"}:
+        await safe_answer(message, "⛔ Команда /police доступна только администраторам группы.")
+        return
+
+    try:
+        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        status = getattr(member.status, "value", member.status)
+    except Exception as error:
+        logging.exception("Не удалось проверить права для /police: %r", error)
+        await safe_answer(message, "⚠️ Не удалось проверить права администратора. Попробуйте ещё раз.")
+        return
+
+    if status not in {"administrator", "creator"}:
+        # Для обычных участников команда недоступна.
+        await safe_answer(message, "⛔ Команда /police доступна только администраторам группы.")
+        return
+
+    stats.register_chat(message.chat.id)
+    await safe_answer(message, stats.police_text())
+
+
 @dp.message(Command("фарт"))
 async def luck_command(message: Message) -> None:
     if not message.from_user:
@@ -251,6 +282,7 @@ async def all_messages(message: Message) -> None:
     # Рекламные формулировки по-прежнему удаляются у всех.
     if looks_like_ad(message, allow_plain_links=not pending_captcha):
         await safe_delete_message(bot, message.chat.id, message.message_id)
+        stats.increment("ads_removed", chat_id=message.chat.id)
         return
 
     if pending_captcha:
@@ -300,12 +332,42 @@ async def start_health_server() -> web.AppRunner:
     return runner
 
 
+async def daily_stats_worker() -> None:
+    """В 23:59 по времени Молдовы публикует суточную сводку один раз."""
+    from datetime import datetime
+
+    while True:
+        try:
+            now = datetime.now(stats.MOLDOVA_TZ)
+            if now.hour == 23 and now.minute == 59 and not stats.report_already_sent():
+                text = stats.daily_report_text()
+                sent = False
+                for chat_id in stats.chat_ids():
+                    try:
+                        await bot.send_message(chat_id, text)
+                        sent = True
+                    except Exception as error:
+                        logging.exception(
+                            "Не удалось отправить суточную сводку chat_id=%s: %r",
+                            chat_id,
+                            error,
+                        )
+                if sent:
+                    stats.mark_report_sent()
+            # snapshot() также сбрасывает счётчики после наступления нового дня.
+            stats.snapshot()
+        except Exception as error:
+            logging.exception("Ошибка суточной статистики: %r", error)
+        await asyncio.sleep(20)
+
+
 async def main() -> None:
     global BOT_ID
     global BOT_NAME
     global BOT_USERNAME
 
     health_runner = await start_health_server()
+    daily_stats_task = asyncio.create_task(daily_stats_worker())
     try:
         me = await bot.get_me()
         BOT_ID = me.id
@@ -321,6 +383,11 @@ async def main() -> None:
             allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
         )
     finally:
+        daily_stats_task.cancel()
+        try:
+            await daily_stats_task
+        except asyncio.CancelledError:
+            pass
         await health_runner.cleanup()
         await bot.session.close()
 

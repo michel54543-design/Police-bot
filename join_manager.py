@@ -18,6 +18,7 @@ from aiogram.types import (
 )
 
 from utils import chunk_buttons, safe_delete_message
+import stats
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -217,6 +218,8 @@ async def kick_user(bot: Bot, chat_id: int, user_id: int, reason: str) -> None:
         await bot.ban_chat_member(chat_id, user_id)
         await bot.unban_chat_member(chat_id, user_id)
         logging.info("KICKED chat_id=%s user_id=%s reason=%s", chat_id, user_id, reason)
+        if reason in {"timeout", "wrong_answer"}:
+            stats.increment("captcha_failed", chat_id=chat_id)
     except Exception as error:
         logging.exception("KICK ERROR chat_id=%s user_id=%s reason=%s: %r", chat_id, user_id, reason, error)
     clear_user(chat_id, user_id)
@@ -349,6 +352,7 @@ async def pass_user(bot: Bot, chat_id: int, user_id: int) -> None:
     try:
         await unrestrict_user(bot, chat_id, user_id)
         logging.info("PASSED chat_id=%s user_id=%s", chat_id, user_id)
+        stats.increment("captcha_passed", chat_id=chat_id)
     except Exception as error:
         logging.exception("UNRESTRICT ERROR chat_id=%s user_id=%s: %r", chat_id, user_id, error)
     clear_user(chat_id, user_id)
