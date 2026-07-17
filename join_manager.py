@@ -52,9 +52,10 @@ WELCOME_TEXT = (
 pending: dict[tuple[int, int], dict[str, Any]] = {}
 processing_users: set[tuple[int, int]] = set()
 timeout_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
-group_notice_messages: dict[int, int] = {}
-group_notice_tasks: dict[int, asyncio.Task[None]] = {}
+group_notice_messages: dict[tuple[int, int], int] = {}
+group_notice_tasks: dict[tuple[int, int], asyncio.Task[None]] = {}
 BOT_ID: int | None = None
+BOT_USERNAME: str | None = None
 
 join_queue: asyncio.Queue[tuple[Bot, int, User]] = asyncio.Queue(maxsize=QUEUE_MAXSIZE)
 queued_users: set[tuple[int, int]] = set()
@@ -226,9 +227,15 @@ def load_questions() -> list[dict[str, Any]]:
 QUESTIONS = load_questions()
 
 
-def set_bot_id(bot_id: int | None) -> None:
-    global BOT_ID
+def set_bot_identity(bot_id: int | None, bot_username: str | None = None) -> None:
+    global BOT_ID, BOT_USERNAME
     BOT_ID = bot_id
+    BOT_USERNAME = (bot_username or "").lstrip("@") or None
+
+
+def set_bot_id(bot_id: int | None) -> None:
+    """Обратная совместимость со старыми вызовами и тестами."""
+    set_bot_identity(bot_id, BOT_USERNAME)
 
 
 def member_status(value: object) -> str:
@@ -373,32 +380,80 @@ def clear_user(chat_id: int, user_id: int) -> None:
     save_state()
 
 
-async def delete_group_notice_later(bot: Bot, chat_id: int, message_id: int) -> None:
+async def delete_group_notice_later(bot: Bot, chat_id: int, user_id: int, message_id: int) -> None:
+    key = (chat_id, user_id)
     try:
         await asyncio.sleep(GROUP_NOTICE_SECONDS)
-        if group_notice_messages.get(chat_id) == message_id:
+        if group_notice_messages.get(key) == message_id:
             await safe_delete_message(bot, chat_id, message_id)
-            group_notice_messages.pop(chat_id, None)
-            group_notice_tasks.pop(chat_id, None)
+            group_notice_messages.pop(key, None)
+            group_notice_tasks.pop(key, None)
     except asyncio.CancelledError:
         raise
     except Exception as error:
-        logging.exception("GROUP NOTICE DELETE ERROR chat_id=%s: %r", chat_id, error)
+        logging.exception("GROUP NOTICE DELETE ERROR chat_id=%s user_id=%s: %r", chat_id, user_id, error)
 
 
-async def show_group_notice_once(bot: Bot, chat_id: int) -> None:
-    if chat_id in group_notice_messages:
+def verification_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(
+                text="✅ Пройти проверку",
+                callback_data=f"verify:{user_id}",
+            )
+        ]]
+    )
+
+
+async def show_group_notice_once(bot: Bot, chat_id: int, user: User) -> None:
+    key = (chat_id, user.id)
+    if key in group_notice_messages:
         return
+    username = getattr(user, "username", None)
+    full_name = getattr(user, "full_name", None) or str(user.id)
+    name = f"@{username}" if username else full_name
+    text = (
+        f"🔒 {name}, для доступа к чату пройдите проверку.\n\n"
+        "Нажмите кнопку ниже — она предназначена только для вас."
+    )
     try:
-        notice = await bot.send_message(chat_id, GROUP_NOTICE_TEXT)
+        notice = await bot.send_message(
+            chat_id,
+            text,
+            reply_markup=verification_keyboard(user.id),
+        )
     except Exception as error:
-        logging.exception("GROUP NOTICE SEND ERROR chat_id=%s: %r", chat_id, error)
+        logging.exception("GROUP NOTICE SEND ERROR chat_id=%s user_id=%s: %r", chat_id, user.id, error)
         return
-    group_notice_messages[chat_id] = notice.message_id
-    old_task = group_notice_tasks.pop(chat_id, None)
+    group_notice_messages[key] = notice.message_id
+    old_task = group_notice_tasks.pop(key, None)
     if old_task is not None:
         old_task.cancel()
-    group_notice_tasks[chat_id] = asyncio.create_task(delete_group_notice_later(bot, chat_id, notice.message_id))
+    group_notice_tasks[key] = asyncio.create_task(
+        delete_group_notice_later(bot, chat_id, user.id, notice.message_id)
+    )
+
+
+async def handle_verify_button(bot: Bot, callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.data:
+        return
+    try:
+        expected_user_id = int(callback.data.split(":", 1)[1])
+    except (IndexError, ValueError):
+        await callback.answer("Ошибка кнопки проверки.", show_alert=True)
+        return
+    if callback.from_user.id != expected_user_id:
+        await callback.answer("⛔ Эта кнопка предназначена не для вас.", show_alert=True)
+        return
+    matches = [chat_id for (chat_id, user_id) in pending if user_id == expected_user_id]
+    if not matches:
+        await callback.answer("Проверка уже завершена.", show_alert=True)
+        return
+    if not BOT_USERNAME:
+        await callback.answer("Откройте личный чат с ботом и нажмите Start.", show_alert=True)
+        return
+    deep_link = f"https://t.me/{BOT_USERNAME}?start=verify_{matches[0]}_{expected_user_id}"
+    await callback.answer(url=deep_link)
 
 
 async def restrict_user(bot: Bot, chat_id: int, user_id: int) -> None:
@@ -460,7 +515,8 @@ def start_timeout(bot: Bot, chat_id: int, user_id: int) -> None:
     timeout_tasks[(chat_id, user_id)] = asyncio.create_task(timeout_worker(bot, chat_id, user_id))
 
 
-async def send_captcha(bot: Bot, chat_id: int, user_id: int) -> bool:
+async def send_captcha(bot: Bot, chat_id: int, user: User) -> bool:
+    user_id = user.id
     question, keyboard, correct = make_question()
     try:
         captcha_message = await bot.send_message(user_id, captcha_text(question), reply_markup=keyboard)
@@ -475,7 +531,7 @@ async def send_captcha(bot: Bot, chat_id: int, user_id: int) -> bool:
         }
         save_state()
         start_timeout(bot, chat_id, user_id)
-        await show_group_notice_once(bot, chat_id)
+        await show_group_notice_once(bot, chat_id, user)
         logging.info("CAPTCHA WAITING PRIVATE chat_id=%s user_id=%s", chat_id, user_id)
         return True
     pending[(chat_id, user_id)] = {
@@ -549,7 +605,7 @@ async def process_queued_user(bot: Bot, chat_id: int, user: User) -> None:
             logging.exception("RESTRICT ERROR chat_id=%s user_id=%s: %r", chat_id, user.id, error)
             await kick_user(bot, chat_id, user.id, "restrict_failed")
             return
-        sent = await send_captcha(bot, chat_id, user.id)
+        sent = await send_captcha(bot, chat_id, user)
         if not sent:
             await kick_user(bot, chat_id, user.id, "captcha_send_failed")
     except Exception as error:

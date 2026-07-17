@@ -501,14 +501,14 @@ class JoinManagerTests(unittest.IsolatedAsyncioTestCase):
 
         notices = [
             action for action in bot.actions
-            if action[0] == "send_message" and action[1] == -100 and action[3] is None
+            if action[0] == "send_message" and action[1] == -100 and action[3] is not None
         ]
         private_captchas = [
             action for action in bot.actions
             if action[0] == "send_message" and action[1] != -100 and action[3] is not None
         ]
         self.assertEqual(len(join_manager.pending), 50)
-        self.assertEqual(len(notices), 1)
+        self.assertEqual(len(notices), 50)
         self.assertEqual(private_captchas, [])
         self.assertTrue(all(data["delivery"] == "waiting_private" for data in join_manager.pending.values()))
 
@@ -578,7 +578,7 @@ class JoinManagerTests(unittest.IsolatedAsyncioTestCase):
         ]
         group_notices = [
             action for action in bot.actions
-            if action[0] == "send_message" and action[1] == -100 and action[3] is None
+            if action[0] == "send_message" and action[1] == -100 and action[3] is not None
         ]
         self.assertEqual(len(private_captchas), 1)
         self.assertEqual(len(group_notices), 1)

@@ -169,6 +169,11 @@ async def chat_member_update(event) -> None:
     await join_manager.handle_chat_member_update(bot, event)
 
 
+@dp.callback_query(F.data.startswith("verify:"))
+async def verify_callback(callback) -> None:
+    await join_manager.handle_verify_button(bot, callback)
+
+
 @dp.callback_query(F.data.startswith("captcha:"))
 async def captcha_callback(callback) -> None:
     await join_manager.handle_callback(bot, callback)
@@ -430,7 +435,7 @@ async def main() -> None:
         BOT_ID = me.id
         BOT_USERNAME = me.username
         BOT_NAME = me.full_name
-        join_manager.set_bot_id(BOT_ID)
+        join_manager.set_bot_identity(BOT_ID, BOT_USERNAME)
         await join_manager.restore_pending(bot)
         await join_manager.start_workers()
         await bot.delete_webhook(drop_pending_updates=False)
