@@ -173,6 +173,18 @@ async def chat_member_update(event) -> None:
 async def captcha_callback(callback) -> None:
     await join_manager.handle_callback(bot, callback)
 
+
+@dp.message(Command("start"))
+async def start_command(message: Message) -> None:
+    if not message.from_user:
+        return
+    chat_type = getattr(message.chat.type, "value", message.chat.type)
+    if chat_type != "private":
+        return
+    handled = await join_manager.handle_private_start(bot, message.from_user.id)
+    if not handled:
+        await safe_answer(message, "Police online.")
+
 @dp.message(Command("анекдот"))
 async def anecdote(message: Message) -> None:
     if not message.from_user:
@@ -190,6 +202,44 @@ async def safe_answer(message: Message, text: str) -> None:
         await message.answer(text)
     except Exception as error:
         print("Ошибка отправки ответа команды:", repr(error))
+
+
+def is_raid_controller(message: Message) -> bool:
+    if not message.from_user:
+        return False
+    username = (message.from_user.username or "").lower()
+    return username in {OWNER_USERNAME, YURA_USERNAME}
+
+
+async def require_raid_controller(message: Message) -> bool:
+    if is_raid_controller(message):
+        return True
+    await safe_answer(message, "⛔ Эта команда доступна только Michel и Юре.")
+    return False
+
+
+@dp.message(Command("осадавкл"))
+async def raid_on_command(message: Message) -> None:
+    if not await require_raid_controller(message):
+        return
+    join_manager.set_raid_mode(True, forced=True)
+    await safe_answer(message, "🛡 Режим ОСАДА включён вручную. Новые участники идут через защищённую очередь.")
+
+
+@dp.message(Command("осадавыкл"))
+async def raid_off_command(message: Message) -> None:
+    if not await require_raid_controller(message):
+        return
+    join_manager.set_raid_mode(False)
+    await safe_answer(message, "✅ Режим ОСАДА выключен. Бот вернулся в обычный режим.")
+
+
+@dp.message(Command("осадастатус"))
+@dp.message(Command("нагрузка"))
+async def raid_status_command(message: Message) -> None:
+    if not await require_raid_controller(message):
+        return
+    await safe_answer(message, join_manager.raid_status_text())
 
 
 @dp.message(Command("история"))
@@ -375,6 +425,7 @@ async def main() -> None:
         BOT_NAME = me.full_name
         join_manager.set_bot_id(BOT_ID)
         await join_manager.restore_pending(bot)
+        await join_manager.start_workers()
         await bot.delete_webhook(drop_pending_updates=False)
         # Явно запрашиваем chat_member: без него Telegram может присылать только
         # обычные сообщения, и входы новых участников останутся незамеченными.
@@ -388,6 +439,7 @@ async def main() -> None:
             await daily_stats_task
         except asyncio.CancelledError:
             pass
+        await join_manager.stop_workers()
         await health_runner.cleanup()
         await bot.session.close()
 

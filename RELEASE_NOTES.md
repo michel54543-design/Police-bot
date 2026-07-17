@@ -1,3 +1,15 @@
+# Police Bot Ultimate v2.7 — Anti Raid Engine
+
+- Добавлен автоматический режим «Осада»: включается при 20 вступлениях за 10 секунд.
+- После 30 секунд без новых вступлений и опустошения очереди режим отключается автоматически.
+- Добавлена очередь до 10 000 новых участников и 3 фоновых обработчика.
+- Добавлена обработка Telegram RetryAfter: бот ждёт указанное Telegram время и возвращает пользователя в очередь.
+- Скрытая капча сохранена: личные сообщения, одно временное уведомление в группе.
+- Администраторы и создатель группы не проходят капчу.
+- Состояние режима «Осада» сохраняется после перезапуска.
+- Команды только для @michel54543 и @darkboogimen: /осадавкл, /осадавыкл, /осадастатус, /нагрузка.
+- Все существующие тесты проекта пройдены.
+
 # Police Bot Ultimate v2.5.6
 
 - Изменены только пользовательские тексты: оставшиеся английские выражения заменены русскими.
@@ -23,6 +35,13 @@
 
 Текст вынесен в единую константу `WELCOME_TEXT`, чтобы его случайно не заменили при следующих обновлениях.
 # Police Bot Ultimate Release Candidate
+
+## Hidden Captcha / Clean Chat
+- New members are muted immediately, then receive captcha in private messages when possible.
+- The group is not filled with per-user captcha messages during mass joins.
+- If private messages are closed, the group shows only one short service notice for 15 seconds.
+- `/start` in private chat resends the waiting captcha.
+- Hidden captcha timeout is 5 minutes; pending checks are still restored after Render restart.
 
 # Police Bot Ultimate v2.5
 

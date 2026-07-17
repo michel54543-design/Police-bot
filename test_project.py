@@ -46,12 +46,12 @@ class ProjectDataTests(unittest.TestCase):
         source = (ROOT / "join_manager.py").read_text(encoding="utf-8")
         captcha_source = (ROOT / "captcha.py").read_text(encoding="utf-8")
         self.assertIn("CAPTCHA_TIMEOUT_SECONDS = 120", source)
+        self.assertIn("HIDDEN_CAPTCHA_TIMEOUT_SECONDS = 5 * 60", source)
+        self.assertIn("GROUP_NOTICE_SECONDS = 15", source)
         self.assertIn("chunk_buttons(buttons, 1)", source)
         self.assertIn("asyncio.create_task(timeout_worker", source)
         forbidden_state = "passed" + "_users"
         self.assertNotIn(forbidden_state, captcha_source + source)
-        self.assertIn("\u0414\u043e\u0431\u0440\u043e \u043f\u043e\u0436\u0430\u043b\u043e\u0432\u0430\u0442\u044c \u0432 \u0413\u0440\u0443\u043f\u043f\u0443", source)
-        self.assertIn("\u041f\u0443\u0441\u0442\u044c \u0415\u0432\u0433\u0435\u043d\u0438\u0439 \u0431\u0443\u0434\u0435\u0442 \u043d\u0430 \u0432\u0430\u0448\u0435\u0439 \u0441\u0442\u043e\u0440\u043e\u043d\u0435", source)
         self.assertIn("STATE_PATH", source)
         self.assertIn("restore_pending", source)
         self.assertIn("JOIN DETECTED", source)
@@ -60,10 +60,12 @@ class ProjectDataTests(unittest.TestCase):
         self.assertIn("PASSED", source)
         self.assertIn("TIMEOUT", source)
         self.assertIn("KICKED", source)
-        self.assertIn("WELCOME_TEXT", source)
         self.assertIn("def member_is_present", source)
         self.assertIn("getattr(chat_member, \"is_member\", False)", source)
-        self.assertIn("Не флудите, не спамьте и приятного общения! 🍻", source)
+        self.assertIn("handle_private_start", source)
+        self.assertIn("show_group_notice_once", source)
+        self.assertIn("GROUP_NOTICE_TEXT", source)
+        self.assertNotIn("bot.send_message(chat_id, captcha_text", source)
 
     def test_jokes_json_clean_and_unique(self):
         data = self.load_json("jokes.json")
@@ -383,13 +385,15 @@ class JoinManagerTests(unittest.IsolatedAsyncioTestCase):
         sys.modules["aiogram"] = aiogram_stub
         sys.modules["aiogram.types"] = aiogram_types_stub
 
-    async def test_mass_join_50_users_are_muted_and_get_captcha(self):
+    async def test_mass_join_50_users_are_muted_and_get_private_captcha(self):
         self.install_aiogram_stubs()
         join_manager = importlib.reload(importlib.import_module("join_manager"))
         join_manager.STATE_PATH = ROOT / "test_join_state.json"
         join_manager.pending.clear()
         join_manager.processing_users.clear()
         join_manager.timeout_tasks.clear()
+        join_manager.group_notice_messages.clear()
+        join_manager.group_notice_tasks.clear()
 
         class FakeMessage:
             def __init__(self, message_id):
@@ -404,7 +408,7 @@ class JoinManagerTests(unittest.IsolatedAsyncioTestCase):
                 self.actions.append(("restrict", chat_id, user_id, permissions.kwargs))
 
             async def send_message(self, chat_id, text, reply_markup=None):
-                self.actions.append(("send_captcha", chat_id, text, reply_markup))
+                self.actions.append(("send_message", chat_id, text, reply_markup))
                 self.next_message_id += 1
                 return FakeMessage(self.next_message_id)
 
@@ -427,13 +431,163 @@ class JoinManagerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(join_manager.pending), 50)
         self.assertEqual(len([action for action in bot.actions if action[0] == "restrict"]), 50)
-        self.assertEqual(len([action for action in bot.actions if action[0] == "send_captcha"]), 50)
+        private_captchas = [
+            action for action in bot.actions
+            if action[0] == "send_message" and action[1] != -100 and action[3] is not None
+        ]
+        group_messages = [
+            action for action in bot.actions
+            if action[0] == "send_message" and action[1] == -100
+        ]
+        self.assertEqual(len(private_captchas), 50)
+        self.assertEqual(group_messages, [])
         for user in users:
             user_actions = [action[0] for action in bot.actions if len(action) > 2 and action[2] == user.id]
             self.assertEqual(user_actions[0], "restrict")
 
         for user in users:
             join_manager.clear_user(-100, user.id)
+        if join_manager.STATE_PATH.exists():
+            join_manager.STATE_PATH.unlink()
+
+    async def test_closed_private_chat_creates_only_one_group_notice(self):
+        self.install_aiogram_stubs()
+        join_manager = importlib.reload(importlib.import_module("join_manager"))
+        join_manager.STATE_PATH = ROOT / "test_join_state.json"
+        join_manager.pending.clear()
+        join_manager.processing_users.clear()
+        join_manager.timeout_tasks.clear()
+        join_manager.group_notice_messages.clear()
+        join_manager.group_notice_tasks.clear()
+
+        class FakeMessage:
+            def __init__(self, message_id):
+                self.message_id = message_id
+
+        class FakeBot:
+            def __init__(self):
+                self.actions = []
+                self.next_message_id = 500
+
+            async def restrict_chat_member(self, chat_id, user_id, permissions):
+                self.actions.append(("restrict", chat_id, user_id, permissions.kwargs))
+
+            async def send_message(self, chat_id, text, reply_markup=None):
+                if chat_id > 0 and reply_markup is not None:
+                    raise RuntimeError("private chat closed")
+                self.actions.append(("send_message", chat_id, text, reply_markup))
+                self.next_message_id += 1
+                return FakeMessage(self.next_message_id)
+
+            async def ban_chat_member(self, chat_id, user_id):
+                self.actions.append(("ban", chat_id, user_id))
+
+            async def unban_chat_member(self, chat_id, user_id):
+                self.actions.append(("unban", chat_id, user_id))
+
+            async def delete_message(self, chat_id, message_id):
+                self.actions.append(("delete", chat_id, message_id))
+
+        class FakeUser:
+            def __init__(self, user_id):
+                self.id = user_id
+                self.username = f"user{user_id}"
+                self.is_bot = False
+
+        bot = FakeBot()
+        users = [FakeUser(20_000 + index) for index in range(50)]
+        for user in users:
+            await join_manager.start_for_user(bot, -100, user)
+
+        notices = [
+            action for action in bot.actions
+            if action[0] == "send_message" and action[1] == -100 and action[3] is None
+        ]
+        private_captchas = [
+            action for action in bot.actions
+            if action[0] == "send_message" and action[1] != -100 and action[3] is not None
+        ]
+        self.assertEqual(len(join_manager.pending), 50)
+        self.assertEqual(len(notices), 1)
+        self.assertEqual(private_captchas, [])
+        self.assertTrue(all(data["delivery"] == "waiting_private" for data in join_manager.pending.values()))
+
+        for task in list(join_manager.group_notice_tasks.values()):
+            task.cancel()
+        for user in users:
+            join_manager.clear_user(-100, user.id)
+        join_manager.group_notice_messages.clear()
+        join_manager.group_notice_tasks.clear()
+        if join_manager.STATE_PATH.exists():
+            join_manager.STATE_PATH.unlink()
+
+    async def test_private_start_sends_waiting_captcha_without_group_noise(self):
+        self.install_aiogram_stubs()
+        join_manager = importlib.reload(importlib.import_module("join_manager"))
+        join_manager.STATE_PATH = ROOT / "test_join_state.json"
+        join_manager.pending.clear()
+        join_manager.processing_users.clear()
+        join_manager.timeout_tasks.clear()
+        join_manager.group_notice_messages.clear()
+        join_manager.group_notice_tasks.clear()
+
+        class FakeMessage:
+            def __init__(self, message_id):
+                self.message_id = message_id
+
+        class FakeBot:
+            def __init__(self):
+                self.actions = []
+                self.next_message_id = 800
+                self.private_open = False
+
+            async def restrict_chat_member(self, chat_id, user_id, permissions):
+                self.actions.append(("restrict", chat_id, user_id, permissions.kwargs))
+
+            async def send_message(self, chat_id, text, reply_markup=None):
+                if chat_id > 0 and reply_markup is not None and not self.private_open:
+                    raise RuntimeError("private chat closed")
+                self.actions.append(("send_message", chat_id, text, reply_markup))
+                self.next_message_id += 1
+                return FakeMessage(self.next_message_id)
+
+            async def ban_chat_member(self, chat_id, user_id):
+                self.actions.append(("ban", chat_id, user_id))
+
+            async def unban_chat_member(self, chat_id, user_id):
+                self.actions.append(("unban", chat_id, user_id))
+
+            async def delete_message(self, chat_id, message_id):
+                self.actions.append(("delete", chat_id, message_id))
+
+        class FakeUser:
+            id = 30_000
+            username = "private_start_user"
+            is_bot = False
+
+        bot = FakeBot()
+        await join_manager.start_for_user(bot, -100, FakeUser())
+        self.assertEqual(join_manager.pending[(-100, FakeUser.id)]["delivery"], "waiting_private")
+        bot.private_open = True
+        handled = await join_manager.handle_private_start(bot, FakeUser.id)
+        self.assertTrue(handled)
+        self.assertEqual(join_manager.pending[(-100, FakeUser.id)]["delivery"], "private")
+        private_captchas = [
+            action for action in bot.actions
+            if action[0] == "send_message" and action[1] == FakeUser.id and action[3] is not None
+        ]
+        group_notices = [
+            action for action in bot.actions
+            if action[0] == "send_message" and action[1] == -100 and action[3] is None
+        ]
+        self.assertEqual(len(private_captchas), 1)
+        self.assertEqual(len(group_notices), 1)
+
+        for task in list(join_manager.group_notice_tasks.values()):
+            task.cancel()
+        join_manager.clear_user(-100, FakeUser.id)
+        join_manager.group_notice_messages.clear()
+        join_manager.group_notice_tasks.clear()
         if join_manager.STATE_PATH.exists():
             join_manager.STATE_PATH.unlink()
 
