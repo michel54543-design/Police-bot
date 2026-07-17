@@ -222,16 +222,23 @@ async def require_raid_controller(message: Message) -> bool:
 async def raid_on_command(message: Message) -> None:
     if not await require_raid_controller(message):
         return
+    was_enabled = join_manager.raid_mode
     join_manager.set_raid_mode(True, forced=True)
-    await safe_answer(message, "🛡 Режим ОСАДА включён вручную. Новые участники идут через защищённую очередь.")
+    if not was_enabled:
+        await join_manager.send_raid_started_alert(bot, message.chat.id)
+    else:
+        await safe_answer(message, "🛡 Режим ОСАДА уже включён.")
 
 
 @dp.message(Command("осадавыкл"))
 async def raid_off_command(message: Message) -> None:
     if not await require_raid_controller(message):
         return
-    join_manager.set_raid_mode(False)
-    await safe_answer(message, "✅ Режим ОСАДА выключен. Бот вернулся в обычный режим.")
+    if join_manager.raid_mode:
+        await join_manager.send_raid_finished_alert(bot, message.chat.id)
+        join_manager.set_raid_mode(False)
+    else:
+        await safe_answer(message, "✅ Режим ОСАДА уже выключен.")
 
 
 @dp.message(Command("осадастатус"))

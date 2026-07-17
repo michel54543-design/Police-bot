@@ -68,6 +68,10 @@ last_join_at: float | None = None
 raid_total = 0
 raid_passed = 0
 raid_removed = 0
+raid_bot: Bot | None = None
+raid_chat_id: int | None = None
+raid_alert_task: asyncio.Task[None] | None = None
+RAID_ALERT_DELETE_SECONDS = 120
 
 
 def save_raid_state() -> None:
@@ -156,12 +160,60 @@ async def raid_monitor() -> None:
             await asyncio.sleep(5)
             if raid_mode and not raid_forced and last_join_at is not None:
                 if time.time() - last_join_at >= RAID_COOLDOWN_SECONDS and join_queue.empty():
+                    if raid_bot is not None and raid_chat_id is not None:
+                        await send_raid_finished_alert(raid_bot, raid_chat_id)
                     set_raid_mode(False)
         except asyncio.CancelledError:
             raise
         except Exception as error:
             logging.exception("RAID MONITOR ERROR: %r", error)
 
+
+
+async def _delete_raid_alert_later(bot: Bot, chat_id: int, message_id: int) -> None:
+    try:
+        await asyncio.sleep(RAID_ALERT_DELETE_SECONDS)
+        await safe_delete_message(bot, chat_id, message_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as error:
+        logging.exception("RAID ALERT DELETE ERROR chat_id=%s: %r", chat_id, error)
+
+
+async def send_raid_started_alert(bot: Bot, chat_id: int) -> None:
+    global raid_alert_task
+    text = (
+        "🚨 ВНИМАНИЕ! АТАКА БОТОВ НА ГРУППУ!\n\n"
+        "🛡 Police Bot автоматически включил режим защиты «ОСАДА».\n"
+        "🤖 Все новые участники направлены на проверку.\n"
+        "✅ Обычным участникам ничего делать не нужно."
+    )
+    try:
+        message = await bot.send_message(chat_id, text)
+        if raid_alert_task is not None and not raid_alert_task.done():
+            raid_alert_task.cancel()
+        raid_alert_task = asyncio.create_task(_delete_raid_alert_later(bot, chat_id, message.message_id))
+    except Exception as error:
+        logging.exception("RAID START ALERT ERROR chat_id=%s: %r", chat_id, error)
+
+
+async def send_raid_finished_alert(bot: Bot, chat_id: int) -> None:
+    global raid_alert_task
+    text = (
+        "🏆 АТАКА ОТРАЖЕНА!\n\n"
+        "✅ Режим «ОСАДА» завершён.\n"
+        f"👥 Получено вступлений: {raid_total}\n"
+        f"✅ Прошли проверку: {raid_passed}\n"
+        f"🚫 Удалено: {raid_removed}\n\n"
+        "🛡 Группа снова работает в обычном режиме."
+    )
+    try:
+        message = await bot.send_message(chat_id, text)
+        if raid_alert_task is not None and not raid_alert_task.done():
+            raid_alert_task.cancel()
+        raid_alert_task = asyncio.create_task(_delete_raid_alert_later(bot, chat_id, message.message_id))
+    except Exception as error:
+        logging.exception("RAID END ALERT ERROR chat_id=%s: %r", chat_id, error)
 
 def load_questions() -> list[dict[str, Any]]:
     with QUESTIONS_PATH.open("r", encoding="utf-8") as file:
@@ -557,10 +609,16 @@ async def stop_workers() -> None:
 
 
 async def start_for_user(bot: Bot, chat_id: int, user: User) -> None:
+    global raid_bot, raid_chat_id
     key = (chat_id, user.id)
     if user.id == BOT_ID or key in pending or key in processing_users or key in queued_users:
         return
+    was_raid_mode = raid_mode
+    raid_bot = bot
+    raid_chat_id = chat_id
     register_join_spike()
+    if worker_tasks and not was_raid_mode and raid_mode:
+        await send_raid_started_alert(bot, chat_id)
 
     # В тестовом/встроенном режиме без запущенных воркеров сохраняем прежнее
     # немедленное поведение. В рабочем запуске main.py сначала вызывает
