@@ -20,6 +20,7 @@ import predictions
 import stories
 import toasts
 import stats
+import auto_news
 from personality import style
 from reply_selector import choose
 from utils import human_pause, safe_delete_message
@@ -332,6 +333,9 @@ async def luck_command(message: Message) -> None:
     await safe_answer(message, luck.get_luck(message.from_user.id))
 
 
+auto_news.register(dp, bot)
+
+
 @dp.message()
 async def all_messages(message: Message) -> None:
     if not message.from_user:
@@ -438,6 +442,7 @@ async def main() -> None:
         join_manager.set_bot_identity(BOT_ID, BOT_USERNAME)
         await join_manager.restore_pending(bot)
         await join_manager.start_workers()
+        await auto_news.start_worker(bot)
         await bot.delete_webhook(drop_pending_updates=False)
         # Явно запрашиваем chat_member: без него Telegram может присылать только
         # обычные сообщения, и входы новых участников останутся незамеченными.
@@ -451,6 +456,7 @@ async def main() -> None:
             await daily_stats_task
         except asyncio.CancelledError:
             pass
+        await auto_news.stop_worker()
         await join_manager.stop_workers()
         await health_runner.cleanup()
         await bot.session.close()
