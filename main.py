@@ -7,7 +7,7 @@ from pathlib import Path
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiohttp import web
 from dotenv import load_dotenv
 
@@ -43,6 +43,37 @@ BOT_USERNAME: str | None = None
 BOT_NAME: str | None = None
 OWNER_USERNAME = "michel54543"
 YURA_USERNAME = "darkboogimen"
+PANEL_AUTO_CLOSE_SECONDS = 300
+_panel_close_tasks: dict[tuple[int, int], asyncio.Task] = {}
+
+
+async def _auto_close_panel(chat_id: int, message_id: int) -> None:
+    try:
+        await asyncio.sleep(PANEL_AUTO_CLOSE_SECONDS)
+        await bot.delete_message(chat_id, message_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        pass
+    finally:
+        _panel_close_tasks.pop((chat_id, message_id), None)
+
+
+def refresh_panel_auto_close(message: Message) -> None:
+    key = (message.chat.id, message.message_id)
+    old_task = _panel_close_tasks.pop(key, None)
+    if old_task and not old_task.done():
+        old_task.cancel()
+    _panel_close_tasks[key] = asyncio.create_task(
+        _auto_close_panel(*key),
+        name=f"admin-panel-close-{key[0]}-{key[1]}",
+    )
+
+
+def cancel_panel_auto_close(message: Message) -> None:
+    task = _panel_close_tasks.pop((message.chat.id, message.message_id), None)
+    if task and not task.done():
+        task.cancel()
 
 
 def load_list(filename: str) -> list[str]:
@@ -152,6 +183,48 @@ def addressed_to_bot(message: Message) -> bool:
     return False
 
 
+
+
+def admin_panel_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="📰 Новости", callback_data="panel:news"),
+            InlineKeyboardButton(text="🚨 Осада", callback_data="panel:raid"),
+        ],
+        [
+            InlineKeyboardButton(text="🛡 Защита", callback_data="panel:protection"),
+            InlineKeyboardButton(text="📊 Статистика", callback_data="panel:stats"),
+        ],
+        [InlineKeyboardButton(text="📋 Все команды", callback_data="panel:commands")],
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="panel:close")],
+    ])
+
+
+def panel_back_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад в панель", callback_data="panel:home")],
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="panel:close")],
+    ])
+
+
+async def is_panel_controller(user_id: int, username: str | None, chat_id: int) -> bool:
+    if (username or "").lower() in {OWNER_USERNAME, YURA_USERNAME}:
+        return True
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        return getattr(member.status, "value", member.status) == "creator"
+    except Exception:
+        return False
+
+
+async def require_panel_callback(callback: CallbackQuery) -> bool:
+    if not callback.from_user or not callback.message:
+        return False
+    if await is_panel_controller(callback.from_user.id, callback.from_user.username, callback.message.chat.id):
+        return True
+    await callback.answer("⛔ Панель доступна только создателю группы, Юре и Мишелю.", show_alert=True)
+    return False
+
 def owner_reply() -> str:
     return choose("owner", OWNER_MESSAGES)
 
@@ -222,6 +295,136 @@ async def require_raid_controller(message: Message) -> bool:
         return True
     await safe_answer(message, "⛔ Эта команда доступна только Michel и Юре.")
     return False
+
+
+@dp.message(Command("панель"))
+async def panel_command(message: Message) -> None:
+    if not message.from_user:
+        return
+    if not await is_panel_controller(message.from_user.id, message.from_user.username, message.chat.id):
+        await safe_answer(message, "⛔ Панель доступна только создателю группы, Юре и Мишелю.")
+        return
+    panel_message = await message.answer(
+        "🎛 <b>Панель управления Police Bot</b>\n\nВыберите нужный раздел:",
+        reply_markup=admin_panel_keyboard(),
+        parse_mode="HTML",
+    )
+    refresh_panel_auto_close(panel_message)
+
+
+@dp.callback_query(F.data == "panel:home")
+async def panel_home(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    await callback.message.edit_text(
+        "🎛 <b>Панель управления Police Bot</b>\n\nВыберите нужный раздел:",
+        reply_markup=admin_panel_keyboard(),
+        parse_mode="HTML",
+    )
+    refresh_panel_auto_close(callback.message)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "panel:close")
+async def panel_close(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    cancel_panel_auto_close(callback.message)
+    await callback.message.delete()
+    await callback.answer("Панель закрыта")
+
+
+@dp.callback_query(F.data == "panel:raid")
+async def panel_raid(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="🚨 Включить осаду", callback_data="panel:raid:on"),
+            InlineKeyboardButton(text="✅ Выключить осаду", callback_data="panel:raid:off"),
+        ],
+        [InlineKeyboardButton(text="🔄 Обновить статус", callback_data="panel:raid")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="panel:home")],
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="panel:close")],
+    ])
+    await callback.message.edit_text(join_manager.raid_status_text(), reply_markup=keyboard)
+    refresh_panel_auto_close(callback.message)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.in_({"panel:raid:on", "panel:raid:off"}))
+async def panel_raid_switch(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    enable = callback.data.endswith(":on")
+    if enable:
+        was_enabled = join_manager.raid_mode
+        join_manager.set_raid_mode(True, forced=True)
+        if not was_enabled:
+            await join_manager.send_raid_started_alert(bot, callback.message.chat.id)
+    else:
+        if join_manager.raid_mode:
+            await join_manager.send_raid_finished_alert(bot, callback.message.chat.id)
+            join_manager.set_raid_mode(False)
+    await callback.answer("Осада включена" if enable else "Осада выключена")
+    await panel_raid(callback)
+
+
+@dp.callback_query(F.data == "panel:stats")
+async def panel_stats(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    stats.register_chat(callback.message.chat.id)
+    await callback.message.edit_text(stats.police_text(), reply_markup=panel_back_keyboard())
+    refresh_panel_auto_close(callback.message)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "panel:protection")
+async def panel_protection(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    text = (
+        "🛡 <b>Защита группы</b>\n\n"
+        "✅ Капча для новых участников работает.\n"
+        "✅ Непроверенные сообщения удаляются.\n"
+        "✅ Реклама и подозрительные публикации фильтруются.\n"
+        f"🚨 Режим осады: {'включён' if join_manager.raid_mode else 'выключен'}."
+    )
+    await callback.message.edit_text(text, reply_markup=panel_back_keyboard(), parse_mode="HTML")
+    refresh_panel_auto_close(callback.message)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "panel:commands")
+async def panel_commands(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    text = (
+        "📋 <b>Команды Юры, Мишеля и создателя</b>\n\n"
+        "/панель — открыть эту панель\n"
+        "/новость — создать авто-новость\n"
+        "/новости — список новостей\n"
+        "/новостьсейчас ID — опубликовать сейчас\n"
+        "/стопновость ID — остановить\n"
+        "/возобновитьновость ID — продолжить\n"
+        "/удалитьновость ID — удалить\n"
+        "/осадавкл — включить осаду\n"
+        "/осадавыкл — выключить осаду\n"
+        "/осадастатус — статус осады\n"
+        "/нагрузка — текущая нагрузка"
+    )
+    await callback.message.edit_text(text, reply_markup=panel_back_keyboard(), parse_mode="HTML")
+    refresh_panel_auto_close(callback.message)
+    await callback.answer()
+
+
+@dp.callback_query(F.data == "panel:news")
+async def panel_news(callback: CallbackQuery) -> None:
+    if not await require_panel_callback(callback):
+        return
+    await auto_news.show_panel_news(callback, bot)
+    refresh_panel_auto_close(callback.message)
 
 
 @dp.message(Command("осадавкл"))

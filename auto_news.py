@@ -260,6 +260,49 @@ async def stop_worker() -> None:
     _worker_task = None
 
 
+def _panel_news_keyboard(items: list[NewsItem]) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text="➕ Создать новость", callback_data="panel:news:create")]
+    ]
+    for item in items[-10:]:
+        action = "stop" if item.active else "resume"
+        action_text = "⏸" if item.active else "▶️"
+        rows.append([
+            InlineKeyboardButton(text=f"{action_text} #{item.id}", callback_data=f"panel:news:{action}:{item.id}"),
+            InlineKeyboardButton(text="📤 Сейчас", callback_data=f"panel:news:publish:{item.id}"),
+            InlineKeyboardButton(text="🗑", callback_data=f"panel:news:delete:{item.id}"),
+        ])
+    rows.append([InlineKeyboardButton(text="🔄 Обновить", callback_data="panel:news")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="panel:home")])
+    rows.append([InlineKeyboardButton(text="❌ Закрыть", callback_data="panel:close")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+async def show_panel_news(callback: CallbackQuery, bot: Bot) -> None:
+    if not callback.message:
+        return
+    async with _lock:
+        items = [x for x in _load_items() if x.chat_id == callback.message.chat.id]
+    lines = ["📰 <b>Управление авто-новостями</b>"]
+    if not items:
+        lines.append("\n📭 Сохранённых новостей пока нет.")
+    else:
+        for item in items[-10:]:
+            status = "🟢" if item.active else "⏸"
+            label = INTERVALS.get(item.interval_key, (item.interval_key, 0))[0]
+            preview = (item.text or "Фото без подписи").replace("\n", " ")
+            if len(preview) > 40:
+                preview = preview[:37] + "..."
+            lines.append(f"\n{status} <b>#{item.id}</b> · {label} · {item.publish_count} публ.\n{preview}")
+    lines.append("\nНажмите кнопку с номером, чтобы остановить или продолжить новость.")
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=_panel_news_keyboard(items),
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
 def register(dp: Dispatcher, bot: Bot) -> None:
     @dp.message(Command("новость"))
     async def news_command(message: Message, state: FSMContext) -> None:
@@ -382,6 +425,73 @@ def register(dp: Dispatcher, bot: Bot) -> None:
             "🚀 Первая публикация появится сейчас."
         )
         await callback.answer("Новость запущена")
+
+    @dp.callback_query(F.data == "panel:news:create")
+    async def panel_create_news(callback: CallbackQuery, state: FSMContext) -> None:
+        if not callback.message:
+            return
+        username = (callback.from_user.username or "").lower() if callback.from_user else ""
+        allowed = username in OWNER_USERNAMES
+        if not allowed and callback.from_user:
+            try:
+                member = await bot.get_chat_member(callback.message.chat.id, callback.from_user.id)
+                allowed = getattr(member.status, "value", member.status) == "creator"
+            except Exception:
+                allowed = False
+        if not allowed:
+            await callback.answer(ACCESS_DENIED, show_alert=True)
+            return
+        await state.clear()
+        await state.set_state(NewsWizard.waiting_content)
+        await state.update_data(target_chat_id=callback.message.chat.id)
+        await callback.message.edit_text(
+            "📝 Отправьте текст новости или фотографию с подписью.\n\nДля отмены используйте /отмена."
+        )
+        await callback.answer()
+
+    @dp.callback_query(F.data.startswith("panel:news:"))
+    async def panel_news_action(callback: CallbackQuery) -> None:
+        if not callback.message or not callback.from_user:
+            return
+        parts = (callback.data or "").split(":")
+        if len(parts) != 4 or parts[2] not in {"stop", "resume", "publish", "delete"} or not parts[3].isdigit():
+            return
+        username = (callback.from_user.username or "").lower()
+        allowed = username in OWNER_USERNAMES
+        if not allowed:
+            try:
+                member = await bot.get_chat_member(callback.message.chat.id, callback.from_user.id)
+                allowed = getattr(member.status, "value", member.status) == "creator"
+            except Exception:
+                allowed = False
+        if not allowed:
+            await callback.answer(ACCESS_DENIED, show_alert=True)
+            return
+        action, news_id = parts[2], int(parts[3])
+        if action == "publish":
+            try:
+                found = await _publish_by_id(bot, news_id, callback.message.chat.id)
+            except Exception:
+                await callback.answer("Ошибка публикации", show_alert=True)
+                return
+            await callback.answer("Новость опубликована" if found else "Новость не найдена", show_alert=not found)
+        else:
+            async with _lock:
+                items = _load_items()
+                item = next((x for x in items if x.id == news_id and x.chat_id == callback.message.chat.id), None)
+                if not item:
+                    await callback.answer("Новость не найдена", show_alert=True)
+                    return
+                if action == "delete":
+                    items = [x for x in items if not (x.id == news_id and x.chat_id == callback.message.chat.id)]
+                else:
+                    item.active = action == "resume"
+                    if item.active:
+                        item.next_run = time.time() + (item.interval_seconds or 1)
+                _save_items(items)
+            labels = {"stop": "Новость остановлена", "resume": "Новость продолжена", "delete": "Новость удалена"}
+            await callback.answer(labels[action])
+        await show_panel_news(callback, bot)
 
     @dp.message(Command("новости"))
     async def list_news(message: Message) -> None:
