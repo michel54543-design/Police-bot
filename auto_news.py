@@ -11,7 +11,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
@@ -39,6 +39,7 @@ INTERVALS: dict[str, tuple[str, int]] = {
 _lock = asyncio.Lock()
 _worker_task: asyncio.Task | None = None
 _bot: Bot | None = None
+_panel_target_resolver: Callable[[CallbackQuery], int | None] | None = None
 
 
 class NewsWizard(StatesGroup):
@@ -111,22 +112,29 @@ def _next_id(items: list[NewsItem]) -> int:
     return max((item.id for item in items), default=0) + 1
 
 
-async def _is_allowed(bot: Bot, message: Message) -> bool:
-    if not message.from_user:
-        return False
-    username = (message.from_user.username or "").lower()
-    if username in OWNER_USERNAMES:
+async def _is_allowed_for_chat(
+    bot: Bot, user_id: int, username: str | None, target_chat_id: int
+) -> bool:
+    if (username or "").lower() in OWNER_USERNAMES:
         return True
-    chat_type = getattr(message.chat.type, "value", message.chat.type)
-    if chat_type not in {"group", "supergroup"}:
-        return False
     try:
-        member = await bot.get_chat_member(message.chat.id, message.from_user.id)
+        member = await bot.get_chat_member(target_chat_id, user_id)
         status = getattr(member.status, "value", member.status)
         return status == "creator"
     except Exception as error:
         logging.exception("Не удалось проверить создателя группы: %r", error)
         return False
+
+
+async def _is_allowed(bot: Bot, message: Message) -> bool:
+    if not message.from_user:
+        return False
+    chat_type = getattr(message.chat.type, "value", message.chat.type)
+    if chat_type not in {"group", "supergroup"}:
+        return (message.from_user.username or "").lower() in OWNER_USERNAMES
+    return await _is_allowed_for_chat(
+        bot, message.from_user.id, message.from_user.username, message.chat.id
+    )
 
 
 async def _require_allowed(bot: Bot, message: Message) -> bool:
@@ -278,11 +286,13 @@ def _panel_news_keyboard(items: list[NewsItem]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-async def show_panel_news(callback: CallbackQuery, bot: Bot) -> None:
+async def show_panel_news(callback: CallbackQuery, bot: Bot, target_chat_id: int | None = None) -> None:
     if not callback.message:
         return
+    if target_chat_id is None:
+        target_chat_id = callback.message.chat.id
     async with _lock:
-        items = [x for x in _load_items() if x.chat_id == callback.message.chat.id]
+        items = [x for x in _load_items() if x.chat_id == target_chat_id]
     lines = ["📰 <b>Управление авто-новостями</b>"]
     if not items:
         lines.append("\n📭 Сохранённых новостей пока нет.")
@@ -303,7 +313,13 @@ async def show_panel_news(callback: CallbackQuery, bot: Bot) -> None:
     await callback.answer()
 
 
-def register(dp: Dispatcher, bot: Bot) -> None:
+def register(
+    dp: Dispatcher,
+    bot: Bot,
+    panel_target_resolver: Callable[[CallbackQuery], int | None] | None = None,
+) -> None:
+    global _panel_target_resolver
+    _panel_target_resolver = panel_target_resolver
     @dp.message(Command("новость"))
     async def news_command(message: Message, state: FSMContext) -> None:
         if not await _require_allowed(bot, message):
@@ -329,7 +345,15 @@ def register(dp: Dispatcher, bot: Bot) -> None:
 
     @dp.message(NewsWizard.waiting_content)
     async def news_content(message: Message, state: FSMContext) -> None:
-        if not await _require_allowed(bot, message):
+        if not message.from_user:
+            await state.clear()
+            return
+        data = await state.get_data()
+        target_chat_id = int(data.get("target_chat_id", message.chat.id))
+        if not await _is_allowed_for_chat(
+            bot, message.from_user.id, message.from_user.username, target_chat_id
+        ):
+            await message.answer(ACCESS_DENIED)
             await state.clear()
             return
         if message.photo:
@@ -384,11 +408,19 @@ def register(dp: Dispatcher, bot: Bot) -> None:
     async def confirm_callback(callback: CallbackQuery, state: FSMContext) -> None:
         if not callback.from_user:
             return
+        target_chat_id = (
+            _panel_target_resolver(callback)
+            if _panel_target_resolver is not None
+            else callback.message.chat.id
+        )
+        if target_chat_id is None:
+            await callback.answer("⚠️ Панель устарела. Откройте её заново.", show_alert=True)
+            return
         username = (callback.from_user.username or "").lower()
         allowed = username in OWNER_USERNAMES
         if not allowed:
             try:
-                member = await bot.get_chat_member(callback.message.chat.id, callback.from_user.id)
+                member = await bot.get_chat_member(target_chat_id, callback.from_user.id)
                 allowed = getattr(member.status, "value", member.status) == "creator"
             except Exception:
                 allowed = False
@@ -430,11 +462,19 @@ def register(dp: Dispatcher, bot: Bot) -> None:
     async def panel_create_news(callback: CallbackQuery, state: FSMContext) -> None:
         if not callback.message:
             return
+        target_chat_id = (
+            _panel_target_resolver(callback)
+            if _panel_target_resolver is not None
+            else callback.message.chat.id
+        )
+        if target_chat_id is None:
+            await callback.answer("⚠️ Панель устарела. Откройте её заново.", show_alert=True)
+            return
         username = (callback.from_user.username or "").lower() if callback.from_user else ""
         allowed = username in OWNER_USERNAMES
         if not allowed and callback.from_user:
             try:
-                member = await bot.get_chat_member(callback.message.chat.id, callback.from_user.id)
+                member = await bot.get_chat_member(target_chat_id, callback.from_user.id)
                 allowed = getattr(member.status, "value", member.status) == "creator"
             except Exception:
                 allowed = False
@@ -443,7 +483,7 @@ def register(dp: Dispatcher, bot: Bot) -> None:
             return
         await state.clear()
         await state.set_state(NewsWizard.waiting_content)
-        await state.update_data(target_chat_id=callback.message.chat.id)
+        await state.update_data(target_chat_id=target_chat_id)
         await callback.message.edit_text(
             "📝 Отправьте текст новости или фотографию с подписью.\n\nДля отмены используйте /отмена."
         )
@@ -456,21 +496,24 @@ def register(dp: Dispatcher, bot: Bot) -> None:
         parts = (callback.data or "").split(":")
         if len(parts) != 4 or parts[2] not in {"stop", "resume", "publish", "delete"} or not parts[3].isdigit():
             return
-        username = (callback.from_user.username or "").lower()
-        allowed = username in OWNER_USERNAMES
-        if not allowed:
-            try:
-                member = await bot.get_chat_member(callback.message.chat.id, callback.from_user.id)
-                allowed = getattr(member.status, "value", member.status) == "creator"
-            except Exception:
-                allowed = False
+        target_chat_id = (
+            _panel_target_resolver(callback)
+            if _panel_target_resolver is not None
+            else callback.message.chat.id
+        )
+        if target_chat_id is None:
+            await callback.answer("⚠️ Панель устарела. Откройте её заново.", show_alert=True)
+            return
+        allowed = await _is_allowed_for_chat(
+            bot, callback.from_user.id, callback.from_user.username, target_chat_id
+        )
         if not allowed:
             await callback.answer(ACCESS_DENIED, show_alert=True)
             return
         action, news_id = parts[2], int(parts[3])
         if action == "publish":
             try:
-                found = await _publish_by_id(bot, news_id, callback.message.chat.id)
+                found = await _publish_by_id(bot, news_id, target_chat_id)
             except Exception:
                 await callback.answer("Ошибка публикации", show_alert=True)
                 return
@@ -478,12 +521,12 @@ def register(dp: Dispatcher, bot: Bot) -> None:
         else:
             async with _lock:
                 items = _load_items()
-                item = next((x for x in items if x.id == news_id and x.chat_id == callback.message.chat.id), None)
+                item = next((x for x in items if x.id == news_id and x.chat_id == target_chat_id), None)
                 if not item:
                     await callback.answer("Новость не найдена", show_alert=True)
                     return
                 if action == "delete":
-                    items = [x for x in items if not (x.id == news_id and x.chat_id == callback.message.chat.id)]
+                    items = [x for x in items if not (x.id == news_id and x.chat_id == target_chat_id)]
                 else:
                     item.active = action == "resume"
                     if item.active:
@@ -491,7 +534,7 @@ def register(dp: Dispatcher, bot: Bot) -> None:
                 _save_items(items)
             labels = {"stop": "Новость остановлена", "resume": "Новость продолжена", "delete": "Новость удалена"}
             await callback.answer(labels[action])
-        await show_panel_news(callback, bot)
+        await show_panel_news(callback, bot, target_chat_id)
 
     @dp.message(Command("новости"))
     async def list_news(message: Message) -> None:

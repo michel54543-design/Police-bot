@@ -597,7 +597,9 @@ class RenderFilesTests(unittest.TestCase):
         self.assertIn("aiogram>=3.4,<4", (ROOT / "requirements.txt").read_text(encoding="utf-8"))
         self.assertIn("python-dotenv", (ROOT / "requirements.txt").read_text(encoding="utf-8"))
         self.assertIn((ROOT / "Procfile").read_text(encoding="utf-8").strip(), {"web: python main.py", "worker: python main.py"})
-        self.assertIn("startCommand: python main.py", (ROOT / "render.yaml").read_text(encoding="utf-8"))
+        render_text = (ROOT / "render.yaml").read_text(encoding="utf-8")
+        docker_text = (ROOT / "Dockerfile").read_text(encoding="utf-8") if (ROOT / "Dockerfile").exists() else ""
+        self.assertTrue("startCommand: python main.py" in render_text or 'CMD ["python", "main.py"]' in docker_text)
 
     def test_no_token_literal_in_project_files(self):
         for path in ROOT.glob("*"):
@@ -619,3 +621,19 @@ class RenderFilesTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class ImageJobAdFilterTests(unittest.TestCase):
+    def test_requested_job_ad_phrases(self):
+        module = importlib.import_module("image_job_ad_filter")
+        positives = [
+            "РАБОТА НА ДОМУ Доход от 5000 рублей в день Возраст 18+ Пишите менеджеру",
+            "Работа из дома. Заработок 7500 ₽ в день. Пишите Полине",
+            "Доход 5000 в день, работа на дому",
+        ]
+        negatives = [
+            "Сегодня работаю дома над игровым проектом",
+            "Менеджер написал о встрече",
+            "Фото без рекламного текста",
+        ]
+        self.assertTrue(all(module.looks_like_job_ad_text(text) for text in positives))
+        self.assertTrue(all(not module.looks_like_job_ad_text(text) for text in negatives))

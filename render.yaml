@@ -1,10 +1,8 @@
 services:
   - type: web
     name: police-bot
-    runtime: python
+    runtime: docker
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python main.py
     healthCheckPath: /health
     envVars:
       - key: BOT_TOKEN

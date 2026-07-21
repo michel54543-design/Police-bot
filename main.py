@@ -21,6 +21,7 @@ import stories
 import toasts
 import stats
 import auto_news
+import image_job_ad_filter
 from personality import style
 from reply_selector import choose
 from utils import human_pause, safe_delete_message
@@ -45,6 +46,7 @@ OWNER_USERNAME = "michel54543"
 YURA_USERNAME = "darkboogimen"
 PANEL_AUTO_CLOSE_SECONDS = 300
 _panel_close_tasks: dict[tuple[int, int], asyncio.Task] = {}
+_panel_target_chats: dict[tuple[int, int], int] = {}
 
 
 async def _auto_close_panel(chat_id: int, message_id: int) -> None:
@@ -57,6 +59,7 @@ async def _auto_close_panel(chat_id: int, message_id: int) -> None:
         pass
     finally:
         _panel_close_tasks.pop((chat_id, message_id), None)
+        _panel_target_chats.pop((chat_id, message_id), None)
 
 
 def refresh_panel_auto_close(message: Message) -> None:
@@ -71,9 +74,42 @@ def refresh_panel_auto_close(message: Message) -> None:
 
 
 def cancel_panel_auto_close(message: Message) -> None:
-    task = _panel_close_tasks.pop((message.chat.id, message.message_id), None)
+    key = (message.chat.id, message.message_id)
+    task = _panel_close_tasks.pop(key, None)
+    _panel_target_chats.pop(key, None)
     if task and not task.done():
         task.cancel()
+
+
+def set_panel_target(message: Message, target_chat_id: int) -> None:
+    _panel_target_chats[(message.chat.id, message.message_id)] = int(target_chat_id)
+
+
+def get_panel_target_chat_id(callback: CallbackQuery) -> int | None:
+    if not callback.message:
+        return None
+    return _panel_target_chats.get((callback.message.chat.id, callback.message.message_id))
+
+
+async def open_private_panel(user_id: int, target_chat_id: int) -> Message:
+    panel_message = await bot.send_message(
+        user_id,
+        "🎛 <b>Панель управления Police Bot</b>\n\n"
+        "Управление группой выполняется из личного чата.\n"
+        "Выберите нужный раздел:",
+        reply_markup=admin_panel_keyboard(),
+        parse_mode="HTML",
+    )
+    set_panel_target(panel_message, target_chat_id)
+    refresh_panel_auto_close(panel_message)
+    return panel_message
+
+
+
+
+async def delete_message_later(chat_id: int, message_id: int, delay: int) -> None:
+    await asyncio.sleep(delay)
+    await safe_delete_message(bot, chat_id, message_id)
 
 
 def load_list(filename: str) -> list[str]:
@@ -220,7 +256,12 @@ async def is_panel_controller(user_id: int, username: str | None, chat_id: int) 
 async def require_panel_callback(callback: CallbackQuery) -> bool:
     if not callback.from_user or not callback.message:
         return False
-    if await is_panel_controller(callback.from_user.id, callback.from_user.username, callback.message.chat.id):
+    chat_type = getattr(callback.message.chat.type, "value", callback.message.chat.type)
+    target_chat_id = get_panel_target_chat_id(callback)
+    if chat_type != "private" or target_chat_id is None:
+        await callback.answer("⚠️ Эта панель устарела. Откройте её заново командой /панель в группе.", show_alert=True)
+        return False
+    if await is_panel_controller(callback.from_user.id, callback.from_user.username, target_chat_id):
         return True
     await callback.answer("⛔ Панель доступна только создателю группы, Юре и Мишелю.", show_alert=True)
     return False
@@ -260,6 +301,24 @@ async def start_command(message: Message) -> None:
     chat_type = getattr(message.chat.type, "value", message.chat.type)
     if chat_type != "private":
         return
+
+    parts = (message.text or "").split(maxsplit=1)
+    payload = parts[1].strip() if len(parts) == 2 else ""
+    if payload.startswith("panel_"):
+        raw_chat_id = payload.removeprefix("panel_")
+        try:
+            target_chat_id = int(raw_chat_id)
+        except ValueError:
+            await safe_answer(message, "⚠️ Неверная ссылка панели. Вызовите /панель в группе ещё раз.")
+            return
+        if not await is_panel_controller(
+            message.from_user.id, message.from_user.username, target_chat_id
+        ):
+            await safe_answer(message, "⛔ Панель доступна только создателю группы, Юре и Мишелю.")
+            return
+        await open_private_panel(message.from_user.id, target_chat_id)
+        return
+
     handled = await join_manager.handle_private_start(bot, message.from_user.id)
     if not handled:
         await safe_answer(message, "Police online.")
@@ -301,15 +360,36 @@ async def require_raid_controller(message: Message) -> bool:
 async def panel_command(message: Message) -> None:
     if not message.from_user:
         return
+    chat_type = getattr(message.chat.type, "value", message.chat.type)
+    if chat_type == "private":
+        await safe_answer(message, "ℹ️ Вызовите /панель в нужной группе, чтобы выбрать, какой группой управлять.")
+        return
+    if chat_type not in {"group", "supergroup"}:
+        return
     if not await is_panel_controller(message.from_user.id, message.from_user.username, message.chat.id):
         await safe_answer(message, "⛔ Панель доступна только создателю группы, Юре и Мишелю.")
         return
-    panel_message = await message.answer(
-        "🎛 <b>Панель управления Police Bot</b>\n\nВыберите нужный раздел:",
-        reply_markup=admin_panel_keyboard(),
-        parse_mode="HTML",
+
+    try:
+        await open_private_panel(message.from_user.id, message.chat.id)
+        notice = await message.answer("✅ Панель отправлена вам в личный чат с ботом.")
+        asyncio.create_task(delete_message_later(notice.chat.id, notice.message_id, 20))
+        return
+    except Exception:
+        pass
+
+    if not BOT_USERNAME:
+        await safe_answer(message, "⚠️ Не удалось открыть личный чат с ботом. Сначала напишите боту /start.")
+        return
+    link = f"https://t.me/{BOT_USERNAME}?start=panel_{message.chat.id}"
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔐 Открыть панель в личном чате", url=link)
+    ]])
+    notice = await message.answer(
+        "🔐 Чтобы открыть панель управления, нажмите кнопку ниже.",
+        reply_markup=keyboard,
     )
-    refresh_panel_auto_close(panel_message)
+    asyncio.create_task(delete_message_later(notice.chat.id, notice.message_id, 60))
 
 
 @dp.callback_query(F.data == "panel:home")
@@ -361,10 +441,10 @@ async def panel_raid_switch(callback: CallbackQuery) -> None:
         was_enabled = join_manager.raid_mode
         join_manager.set_raid_mode(True, forced=True)
         if not was_enabled:
-            await join_manager.send_raid_started_alert(bot, callback.message.chat.id)
+            await join_manager.send_raid_started_alert(bot, get_panel_target_chat_id(callback))
     else:
         if join_manager.raid_mode:
-            await join_manager.send_raid_finished_alert(bot, callback.message.chat.id)
+            await join_manager.send_raid_finished_alert(bot, get_panel_target_chat_id(callback))
             join_manager.set_raid_mode(False)
     await callback.answer("Осада включена" if enable else "Осада выключена")
     await panel_raid(callback)
@@ -374,7 +454,7 @@ async def panel_raid_switch(callback: CallbackQuery) -> None:
 async def panel_stats(callback: CallbackQuery) -> None:
     if not await require_panel_callback(callback):
         return
-    stats.register_chat(callback.message.chat.id)
+    stats.register_chat(get_panel_target_chat_id(callback))
     await callback.message.edit_text(stats.police_text(), reply_markup=panel_back_keyboard())
     refresh_panel_auto_close(callback.message)
     await callback.answer()
@@ -423,7 +503,7 @@ async def panel_commands(callback: CallbackQuery) -> None:
 async def panel_news(callback: CallbackQuery) -> None:
     if not await require_panel_callback(callback):
         return
-    await auto_news.show_panel_news(callback, bot)
+    await auto_news.show_panel_news(callback, bot, get_panel_target_chat_id(callback))
     refresh_panel_auto_close(callback.message)
 
 
@@ -536,7 +616,7 @@ async def luck_command(message: Message) -> None:
     await safe_answer(message, luck.get_luck(message.from_user.id))
 
 
-auto_news.register(dp, bot)
+auto_news.register(dp, bot, panel_target_resolver=get_panel_target_chat_id)
 
 
 @dp.message()
@@ -546,6 +626,12 @@ async def all_messages(message: Message) -> None:
 
     text = message.text or message.caption or ""
     pending_captcha = join_manager.is_pending(message.chat.id, message.from_user.id)
+
+    # Проверяем только изображения с рекламой работы на дому из заданных примеров.
+    if message.photo and await image_job_ad_filter.image_contains_job_ad(bot, message):
+        await safe_delete_message(bot, message.chat.id, message.message_id)
+        stats.increment("ads_removed", chat_id=message.chat.id)
+        return
 
     # Старые участники и прошедшие капчу могут публиковать обычные ссылки.
     # Рекламные формулировки по-прежнему удаляются у всех.
