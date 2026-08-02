@@ -44,9 +44,18 @@ GROUP_NOTICE_TEXT = (
     "нажмите Start и пройдите проверку."
 )
 WELCOME_TEXT = (
-    "🛡 Добро пожаловать в Группу!\n\n"
-    "Пусть Евгений будет на вашей стороне! ⚔️\n\n"
-    "Не флудите, не спамьте и приятного общения! 🍻"
+    "🎉 Новый участник успешно прошёл проверку!\n\n"
+    "👋 Добро пожаловать в WEKINGS!\n\n"
+    "🌐 Основные ссылки для входа в игру:\n\n"
+    "• playwekings.mobi\n"
+    "• playwekings.ru\n"
+    "• proxy.playwekings.ru\n"
+    "• wekings.mobi\n\n"
+    "🔧 Если основные ссылки недоступны, попробуйте прямое подключение:\n\n"
+    "http://87.228.3.220/\n\n"
+    "📊 Статистика игроков, братств, кланов и прироста силы:\n\n"
+    "https://wekings-statistics.onrender.com/\n\n"
+    "⚔️ Приятной игры, хорошего настроения и удачных походов!"
 )
 
 pending: dict[tuple[int, int], dict[str, Any]] = {}
@@ -797,6 +806,10 @@ async def pass_user(bot: Bot, chat_id: int, user_id: int) -> None:
     except Exception as error:
         logging.exception("UNRESTRICT ERROR chat_id=%s user_id=%s: %r", chat_id, user_id, error)
     clear_user(chat_id, user_id)
+    try:
+        await bot.send_message(chat_id, WELCOME_TEXT)
+    except Exception as error:
+        logging.exception("WELCOME SEND ERROR chat_id=%s user_id=%s: %r", chat_id, user_id, error)
     logging.info("HIDDEN CAPTCHA COMPLETE chat_id=%s user_id=%s", chat_id, user_id)
 
 
