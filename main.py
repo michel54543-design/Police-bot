@@ -14,6 +14,7 @@ from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 from dotenv import load_dotenv
 
 import auto_news
+import challenges
 import conversation
 import image_job_ad_filter
 import join_manager
@@ -21,6 +22,7 @@ import jokes
 import luck
 import moderation
 import predictions
+import riddles
 import stats
 import stories
 import toasts
@@ -87,7 +89,7 @@ def is_bot_addressed(message: Message) -> bool:
     text = (message.text or message.caption or "").lower()
     if BOT_USERNAME and f"@{BOT_USERNAME.lower()}" in text:
         return True
-    if re.search(r"(?:^|\s)(?:police|полис|бот)(?:\s|$|[,.!?])", text):
+    if re.search(r"(?:^|\s)(?:police(?:\s+bot)?|полис|полицейский|бот)(?:\s|$|[,.!?;:])", text):
         return True
     reply = message.reply_to_message
     return bool(reply and reply.from_user and reply.from_user.id == BOT_ID)
@@ -156,6 +158,25 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
     async def luck_handler(message: Message) -> None:
         await send_command_result(message, luck, "get_luck")
 
+    @dp.message(Command("загадка"))
+    async def riddle_handler(message: Message) -> None:
+        if not message.from_user:
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        requested_category = parts[1] if len(parts) > 1 else None
+        if requested_category and not riddles.normalize_category(requested_category):
+            await message.answer("Категории: обычная, смешная, логическая, с_подвохом.")
+            return
+        await message.answer(riddles.new_riddle(
+            message.chat.id,
+            message.from_user.id,
+            requested_category,
+        ))
+
+    @dp.message(Command("испытание"))
+    async def challenge_handler(message: Message) -> None:
+        await message.answer(challenges.get_challenge())
+
     @dp.message(Command("осадавкл"))
     async def raid_on(message: Message) -> None:
         if not message.from_user or (message.from_user.username or "").lower() not in {OWNER_USERNAME, YURA_USERNAME}:
@@ -221,16 +242,32 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
 
         text = message.text or message.caption or ""
         conversation.remember(message.from_user.id, text)
-        if not addressed:
+        if not message.from_user.is_bot:
+            display_name = message.from_user.full_name
+            if message.from_user.username:
+                display_name = f"@{message.from_user.username}"
+            conversation.register_activity(message.chat.id, message.from_user.id, display_name)
+
+        riddle_reply = riddles.check_answer(message.chat.id, message.from_user.id, text)
+        if riddle_reply:
+            await message.reply(riddle_reply)
+            return
+
+        if not conversation.should_respond(message.from_user.id, text, addressed):
             return
 
         username = (message.from_user.username or "").lower()
-        if username == OWNER_USERNAME:
+        if addressed and username == OWNER_USERNAME:
             reply = OWNER_REPLIES[message.from_user.id % len(OWNER_REPLIES)]
-        elif username == YURA_USERNAME:
+        elif addressed and username == YURA_USERNAME:
             reply = YURA_REPLIES[message.from_user.id % len(YURA_REPLIES)]
         else:
-            reply = conversation.reply_for(message.from_user.id, text, addressed=True)
+            reply = conversation.reply_for(
+                message.from_user.id,
+                text,
+                addressed=addressed,
+                chat_id=message.chat.id,
+            )
         if reply:
             await message.reply(reply)
 
