@@ -201,7 +201,8 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
     async def captcha_callback(callback: CallbackQuery) -> None:
         await join_manager.handle_callback(bot, callback)
 
-    @dp.callback_query(F.data == "verify:open")
+    # verify_shared оставлен для кнопок в старых сообщениях группы.
+    @dp.callback_query(F.data.in_({"verify:open", "verify_shared"}))
     async def verify_callback(callback: CallbackQuery) -> None:
         await join_manager.handle_verify_button(bot, callback)
 
