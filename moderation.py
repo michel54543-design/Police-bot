@@ -1,9 +1,9 @@
 import asyncio
+import logging
 import random
 import re
 import time
 from collections import defaultdict
-from typing import Any
 
 from aiogram import Bot
 from aiogram.types import ChatPermissions, Message
@@ -14,117 +14,212 @@ TEMP_MUTE_SECONDS = 60
 MAX_OFFENSE_KEYS = 5000
 
 offenses: dict[tuple[int, int], list[float]] = defaultdict(list)
+logger = logging.getLogger("police.moderation")
+
 
 async def safe_reply(message: Message, text: str) -> None:
     try:
         await message.reply(text)
     except Exception as error:
-        print("Ошибка отправки предупреждения:", repr(error))
+        print("Warning send error:", repr(error))
 
-
-BAD_WORD_MARKERS = [
-    "дурак",
-    "тупой",
-    "тупая",
-    "тупишь",
-    "лох",
-    "заткнись",
-    "молчи",
-    "идиот",
-    "дебил",
-    "кретин",
-    "придурок",
-    "отстань",
-    "бесишь",
-    "пошел",
-    "пошёл",
-    "нах",
-    "хрен",
-    "блин",
-    "сука",
-    "суч",
-    "мраз",
-]
 
 WARNINGS_FIRST = [
-    "🛡 Спокойнее. Без оскорблений в адрес других участников.",
-    "⚠️ Первое предупреждение: держим нормальный тон.",
-    "🤖 Police напоминает: спорить можно, оскорблять не надо.",
+    "\U0001f6e1 \u0421\u043f\u043e\u043a\u043e\u0439\u043d\u0435\u0435. \u0411\u0435\u0437 \u043e\u0441\u043a\u043e\u0440\u0431\u043b\u0435\u043d\u0438\u0439 \u0432 \u0430\u0434\u0440\u0435\u0441 \u0434\u0440\u0443\u0433\u0438\u0445 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u043e\u0432.",
+    "\u26a0\ufe0f \u041f\u0435\u0440\u0432\u043e\u0435 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435: \u0434\u0435\u0440\u0436\u0438\u043c \u043d\u043e\u0440\u043c\u0430\u043b\u044c\u043d\u044b\u0439 \u0442\u043e\u043d.",
+    "\U0001f916 Police \u043d\u0430\u043f\u043e\u043c\u0438\u043d\u0430\u0435\u0442: \u0441\u043f\u043e\u0440\u0438\u0442\u044c \u043c\u043e\u0436\u043d\u043e, \u043e\u0441\u043a\u043e\u0440\u0431\u043b\u044f\u0442\u044c \u043d\u0435 \u043d\u0430\u0434\u043e.",
 ]
 
 WARNINGS_SECOND = [
-    "⚠️ Второе предупреждение. Следующее нарушение в течение 10 минут даст мут на 1 минуту.",
-    "🛡 Тон всё ещё слишком резкий. Ещё раз — и будет минутная пауза.",
-    "🤖 Police фиксирует повтор. Дальше включится короткий мут.",
+    "\u26a0\ufe0f \u0412\u0442\u043e\u0440\u043e\u0435 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435. \u0421\u043b\u0435\u0434\u0443\u044e\u0449\u0435\u0435 \u043d\u0430\u0440\u0443\u0448\u0435\u043d\u0438\u0435 \u0432 \u0442\u0435\u0447\u0435\u043d\u0438\u0435 10 \u043c\u0438\u043d\u0443\u0442 \u0434\u0430\u0441\u0442 \u043c\u0443\u0442 \u043d\u0430 1 \u043c\u0438\u043d\u0443\u0442\u0443.",
+    "\U0001f6e1 \u0422\u043e\u043d \u0432\u0441\u0435 \u0435\u0449\u0435 \u0441\u043b\u0438\u0448\u043a\u043e\u043c \u0440\u0435\u0437\u043a\u0438\u0439. \u0415\u0449\u0435 \u0440\u0430\u0437 - \u0438 \u0431\u0443\u0434\u0435\u0442 \u043c\u0438\u043d\u0443\u0442\u043d\u0430\u044f \u043f\u0430\u0443\u0437\u0430.",
+    "\U0001f916 Police \u0444\u0438\u043a\u0441\u0438\u0440\u0443\u0435\u0442 \u043f\u043e\u0432\u0442\u043e\u0440. \u0414\u0430\u043b\u044c\u0448\u0435 \u0432\u043a\u043b\u044e\u0447\u0438\u0442\u0441\u044f \u043a\u043e\u0440\u043e\u0442\u043a\u0438\u0439 \u043c\u0443\u0442.",
 ]
 
 BOT_WARNINGS_FIRST = [
-    "😏 Не быкуй. Я железный, а тебе ещё успокаиваться.",
-    "🛡 Фильтруй базар. Шутить можно, грубить — не надо.",
-    "🤖 Полегче с тоном. Я не обижусь, а вот правила уже записывают.",
-    "Базар поровнее. Мы тут разговариваем, а не рогами меряемся.",
-    "Притормози, герой. Тут не ринг.",
-    "Сбавь обороты. Мысль можно донести и без наезда.",
-    "Эй, полегче. Слова выбирай, это бесплатно.",
-    "Тон прибери. Разговор ещё можно спасти.",
-    "Не кипятись. Я на месте, а твои нервы — уже нет.",
-    "Остынь маленько. Горячая голова плохо думает.",
-    "Тише едешь — целее будешь. Пока это только предупреждение.",
-    "Не кидайся словами. Они иногда возвращаются.",
-    "Спокойнее, команидо. Здесь свои.",
-    "Без лишнего шума. Я тебя и так слышу.",
-    "Попроще с выражениями. Мы не на разборке.",
-    "Пыл умерь. Ещё немного — и тебе самому станет смешно.",
-    "Без наездов. Хочешь поговорить — говори нормально.",
-    "Не разгоняйся. Тормоза потом дороже обойдутся.",
-    "Грубо зашёл. Давай перезайдём нормально.",
-    "Язык придержи. Это пока просьба.",
-    "Шторм в стакане отменяется. Говори по сути.",
-    "Не рычи. Я и с первого раза понимаю.",
-    "Ты сейчас с ботом споришь. Подумай, как мы до этого дошли.",
-    "Напор засчитан, аргументы — нет. Попробуй ещё раз.",
-    "Резковато. Давай без цирка и по делу.",
-    "Не козыряй грубостью. Карта слабая.",
-    "Давай без этого уличного театра. Скажи прямо, что не нравится.",
-    "Не заводись. Я не соперник, я табличка «успокойся».",
-    "Понижаем градус. До мута ещё можно не доводить.",
-    "Словесную дубину убери. Нормально обсудим.",
-    "Громко — не значит убедительно. Давай по новой.",
-    "Ты мне не враг. Не надо так напрягаться.",
+    "Не быкуй. Я железный, но разговор лучше держать ровным.",
+    "Фильтруй базар. Со мной можно шутить, хамить необязательно.",
+    "Полегче с тоном. Давай без дешёвых наездов.",
+    "Базар поровнее. Я всё слышу, даже без ушей.",
+    "Не кипятись. Скажи нормально — отвечу нормально.",
+    "Притормози с наездом. Тут разговор, а не разборка у гаражей.",
+    "Держи тон в полосе. Я сегодня добрый, но протокол рядом.",
+    "Спокойнее, командир. Крик аргументов не добавляет.",
+    "Не гони волну. Лучше скажи, что именно тебя задело.",
+    "Сбавь обороты. Бот не обидится, а чат читать неприятно.",
+    "Без понтов и наездов. Разговаривай по-человечески.",
+    "Ровнее, брат. Тут словами решают, а не громкостью.",
+    "Язык придержи на поворотах. Можно и культурно подколоть.",
+    "Не заводись с пол-оборота. Я ещё даже шутку не закончил.",
+    "Хамство не засчитано. Попробуй ещё раз, но нормальным тоном.",
+    "Эй, без резких движений языком. Давай спокойно.",
+    "Наезд принят, смысла не найдено. Переформулируй без грубости.",
+    "Не устраивай словесный мордобой. Скажи по делу.",
+    "Тон поправь. Я собеседник, а не груша для плохого настроения.",
+    "Давай без бычки. Юмор понимаю, прямое хамство — нет.",
+    "\U0001f602 \u041d\u0430 \u0431\u043e\u0442\u0430 \u043c\u043e\u0436\u043d\u043e \u0432\u043e\u0440\u0447\u0430\u0442\u044c, \u043d\u043e \u0431\u0435\u0437 \u043b\u0438\u0448\u043d\u0435\u0439 \u0433\u0440\u0443\u0431\u043e\u0441\u0442\u0438. \u042d\u0442\u043e \u043f\u0435\u0440\u0432\u043e\u0435 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435.",
+    "\U0001f6e1 Police \u0436\u0435\u043b\u0435\u0437\u043d\u044b\u0439, \u043d\u043e \u043f\u043e\u0440\u044f\u0434\u043e\u043a \u043b\u044e\u0431\u0438\u0442. \u041f\u0435\u0440\u0432\u043e\u0435 \u043f\u0440\u0435\u0434\u0443\u043f\u0440\u0435\u0436\u0434\u0435\u043d\u0438\u0435.",
+    "\U0001f916 \u042f \u0431\u043e\u0442, \u043d\u0435 \u043e\u0431\u0438\u0436\u0430\u044e\u0441\u044c. \u041d\u043e \u043f\u0440\u0430\u0432\u0438\u043b\u0430 \u0447\u0430\u0442\u0430 \u0432\u0441\u0435 \u0440\u0430\u0432\u043d\u043e \u0440\u0430\u0431\u043e\u0442\u0430\u044e\u0442.",
 ]
 
 MUTE_MESSAGES = [
-    "🛡 Третье нарушение за 10 минут. Мут на 1 минуту.",
-    "⚠️ Police включает короткую паузу: мут на 60 секунд.",
-    "🤖 Слишком много оскорблений. Отдыхаем 1 минуту.",
+    "\U0001f6e1 \u0422\u0440\u0435\u0442\u044c\u0435 \u043d\u0430\u0440\u0443\u0448\u0435\u043d\u0438\u0435 \u0437\u0430 10 \u043c\u0438\u043d\u0443\u0442. \u041c\u0443\u0442 \u043d\u0430 1 \u043c\u0438\u043d\u0443\u0442\u0443.",
+    "\u26a0\ufe0f Police \u0432\u043a\u043b\u044e\u0447\u0430\u0435\u0442 \u043a\u043e\u0440\u043e\u0442\u043a\u0443\u044e \u043f\u0430\u0443\u0437\u0443: \u043c\u0443\u0442 \u043d\u0430 60 \u0441\u0435\u043a\u0443\u043d\u0434.",
+    "\U0001f916 \u0421\u043b\u0438\u0448\u043a\u043e\u043c \u043c\u043d\u043e\u0433\u043e \u043e\u0441\u043a\u043e\u0440\u0431\u043b\u0435\u043d\u0438\u0439. \u041e\u0442\u0434\u044b\u0445\u0430\u0435\u043c 1 \u043c\u0438\u043d\u0443\u0442\u0443.",
 ]
+
+WORD_RE = re.compile(r"[0-9A-Za-zА-Яа-яЁё_@]+")
+
+BAD_WORDS = {
+    "\u0434\u0443\u0440\u0430\u043a",
+    "\u0434\u0443\u0440\u0430",
+    "\u0434\u0443\u0440\u044b",
+    "\u0434\u0443\u0440\u043e\u0439",
+    "\u0442\u0443\u043f\u043e\u0439",
+    "\u0442\u0443\u043f\u0430\u044f",
+    "\u0442\u0443\u043f\u044b\u0435",
+    "\u0442\u0443\u043f\u0438\u0448\u044c",
+    "\u043b\u043e\u0445",
+    "\u043b\u043e\u0445\u0438",
+    "\u043b\u043e\u0445\u043e\u043c",
+    "\u0438\u0434\u0438\u043e\u0442",
+    "\u0438\u0434\u0438\u043e\u0442\u043a\u0430",
+    "\u0434\u0435\u0431\u0438\u043b",
+    "\u0434\u0435\u0431\u0438\u043b\u044b",
+    "\u043a\u0440\u0435\u0442\u0438\u043d",
+    "\u043f\u0440\u0438\u0434\u0443\u0440\u043e\u043a",
+    "\u043f\u0440\u0438\u0434\u0443\u0440\u043a\u0438",
+    "\u043c\u0440\u0430\u0437\u044c",
+    "\u043c\u0440\u0430\u0437\u0438",
+    "\u0441\u0443\u043a\u0430",
+    "\u0441\u0443\u043a\u0438",
+    "\u0441\u0443\u0447\u043a\u0430",
+    "\u0441\u0443\u0447\u0430\u0440\u0430",
+}
+
+BAD_PHRASES = {
+    ("\u0437\u0430\u0442\u043a\u043d\u0438\u0441\u044c",),
+    ("\u0437\u0430\u0442\u043a\u043d\u0438", "\u0440\u043e\u0442"),
+    ("\u0437\u0430\u043a\u0440\u043e\u0439", "\u0440\u043e\u0442"),
+    ("\u0438\u0434\u0438", "\u043d\u0430\u0445\u0440\u0435\u043d"),
+    ("\u043f\u043e\u0448\u0435\u043b", "\u043d\u0430\u0445\u0440\u0435\u043d"),
+    ("\u043f\u043e\u0448\u0435\u043b", "\u043d\u0430"),
+    ("\u043f\u043e\u0448\u0435\u043b", "\u0442\u044b"),
+    ("\u043f\u043e\u0448\u0435\u043b", "\u0432\u043e\u043d"),
+    ("\u043e\u0442\u0441\u0442\u0430\u043d\u044c",),
+}
+
+TARGET_WORDS = {
+    "\u0442\u044b",
+    "\u0442\u0435\u0431\u044f",
+    "\u0442\u0435\u0431\u0435",
+    "\u0442\u043e\u0431\u043e\u0439",
+    "\u0432\u044b",
+    "\u0432\u0430\u0441",
+    "\u0432\u0430\u043c",
+    "\u0432\u0430\u043c\u0438",
+}
+
+META_WORDS = {
+    "\u043c\u0430\u0442",
+    "\u043c\u0430\u0442\u0430",
+    "\u043c\u0430\u0442\u043e\u043c",
+    "\u043e\u0441\u043a\u043e\u0440\u0431\u043b\u0435\u043d\u0438\u0435",
+    "\u043e\u0441\u043a\u043e\u0440\u0431\u043b\u0435\u043d\u0438\u044f",
+    "\u0441\u043b\u043e\u0432\u043e",
+    "\u0441\u043b\u043e\u0432\u0430",
+    "\u043f\u0440\u0430\u0432\u0438\u043b\u0430",
+    "\u043e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c",
+    "\u043e\u0431\u0441\u0443\u0436\u0434\u0435\u043d\u0438\u0435",
+    "\u0441\u043a\u0440\u044b\u0442\u044b\u0439",
+    "\u0441\u043a\u0440\u044b\u0442\u043e",
+}
+
+
+def words_for_check(text: str) -> list[str]:
+    return [match.group(0).lower().replace("\u0451", "\u0435") for match in WORD_RE.finditer(text)]
+
+
+def contains_phrase(words: list[str], phrase: tuple[str, ...]) -> bool:
+    if len(phrase) > len(words):
+        return False
+    normalized = tuple(part.replace("\u0451", "\u0435") for part in phrase)
+    size = len(normalized)
+    return any(tuple(words[index:index + size]) == normalized for index in range(len(words) - size + 1))
 
 
 def contains_bad_words(text: str) -> bool:
-    lowered = text.lower()
-    # Короткое «нах» ищем как отдельное ругательство, а не как часть
-    # обычных слов: «находится», «находка» и т. п.
-    if re.search(r"(?<![\wа-яё])нах(?:уй|ер)?(?![\wа-яё])", lowered):
+    words = words_for_check(text)
+    if not words:
+        return False
+    return any(word in BAD_WORDS for word in words) or any(contains_phrase(words, phrase) for phrase in BAD_PHRASES)
+
+
+
+
+def matched_bad_markers(text: str) -> list[str]:
+    """Возвращает точные слова/фразы, из-за которых сообщение признано грубым."""
+    words = words_for_check(text)
+    matches = [word for word in words if word in BAD_WORDS]
+    for phrase in BAD_PHRASES:
+        if contains_phrase(words, phrase):
+            matches.append(" ".join(phrase))
+    return sorted(set(matches))
+
+
+def log_moderation_decision(
+    message: Message,
+    *,
+    text: str,
+    meta: bool,
+    bad_markers: list[str],
+    targeted: bool,
+    addressed_to_bot: bool,
+    action: str,
+) -> None:
+    """Подробная диагностика ложных срабатываний в логах Render."""
+    user_id = getattr(getattr(message, "from_user", None), "id", None)
+    chat_id = getattr(getattr(message, "chat", None), "id", None)
+    compact_text = " ".join(text.split())[:300]
+    logger.info(
+        "MODERATION text=%r chat_id=%s user_id=%s meta=%s bad=%s targeted=%s addressed=%s action=%s",
+        compact_text,
+        chat_id,
+        user_id,
+        meta,
+        bad_markers,
+        targeted,
+        addressed_to_bot,
+        action,
+    )
+
+
+def is_meta_discussion(text: str) -> bool:
+    words = words_for_check(text)
+    if not words:
+        return False
+    if {"\u044d\u0442\u043e", "\u043d\u0435", "\u043c\u0430\u0442"}.issubset(set(words)):
         return True
-    return any(marker in lowered for marker in BAD_WORD_MARKERS if marker != "нах")
-
-
-def starts_with_bot_address(text: str) -> bool:
-    """«Бот пошёл…» — явное обращение даже без запятой."""
-    return re.match(r"^\s*бот(?:\s+|[,.:;!?—-])", text.lower()) is not None
+    return any(word in META_WORDS for word in words)
 
 
 def has_mention(text: str) -> bool:
     return "@" in text
 
 
+def has_explicit_target(text: str) -> bool:
+    return any(word in TARGET_WORDS for word in words_for_check(text))
+
+
 def is_targeted(message: Message, addressed_to_bot: bool) -> bool:
     text = message.text or message.caption or ""
-    if addressed_to_bot or starts_with_bot_address(text):
+    if has_mention(text):
         return True
     if getattr(message, "reply_to_message", None) is not None:
         return True
-    return has_mention(text)
+    if addressed_to_bot:
+        return True
+    return has_explicit_target(text)
 
 
 def register_offense(chat_id: int, user_id: int) -> int:
@@ -202,7 +297,7 @@ async def temporary_mute(bot: Bot, chat_id: int, user_id: int) -> None:
     try:
         await bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=mute_permissions())
     except Exception as error:
-        print("Ошибка временного мута:", repr(error))
+        print("Temporary mute error:", repr(error))
         return
 
     await asyncio.sleep(TEMP_MUTE_SECONDS)
@@ -210,7 +305,7 @@ async def temporary_mute(bot: Bot, chat_id: int, user_id: int) -> None:
     try:
         await bot.restrict_chat_member(chat_id=chat_id, user_id=user_id, permissions=unmute_permissions())
     except Exception as error:
-        print("Ошибка снятия временного мута:", repr(error))
+        print("Temporary unmute error:", repr(error))
 
 
 async def handle_bad_language(bot: Bot, message: Message, addressed_to_bot: bool) -> bool:
@@ -218,15 +313,38 @@ async def handle_bad_language(bot: Bot, message: Message, addressed_to_bot: bool
         return False
 
     text = message.text or message.caption or ""
-    if not contains_bad_words(text):
+    meta = is_meta_discussion(text)
+    bad_markers = matched_bad_markers(text)
+    targeted = is_targeted(message, addressed_to_bot)
+
+    if meta:
+        log_moderation_decision(
+            message, text=text, meta=meta, bad_markers=bad_markers,
+            targeted=targeted, addressed_to_bot=addressed_to_bot, action="IGNORE_META",
+        )
         return False
 
-    targeted_at_bot = addressed_to_bot or starts_with_bot_address(text)
-    if not is_targeted(message, targeted_at_bot):
-        return True
+    if not bad_markers:
+        log_moderation_decision(
+            message, text=text, meta=meta, bad_markers=bad_markers,
+            targeted=targeted, addressed_to_bot=addressed_to_bot, action="IGNORE_NO_BAD_WORD",
+        )
+        return False
+
+    if not targeted:
+        log_moderation_decision(
+            message, text=text, meta=meta, bad_markers=bad_markers,
+            targeted=targeted, addressed_to_bot=addressed_to_bot, action="IGNORE_NOT_TARGETED",
+        )
+        return False
 
     level = register_offense(message.chat.id, message.from_user.id)
-    await safe_reply(message, warning_text(level, targeted_at_bot))
+    action = "MUTE_60_SECONDS" if level >= 3 else f"WARN_{level}"
+    log_moderation_decision(
+        message, text=text, meta=meta, bad_markers=bad_markers,
+        targeted=targeted, addressed_to_bot=addressed_to_bot, action=action,
+    )
+    await safe_reply(message, warning_text(level, addressed_to_bot))
 
     if level >= 3:
         reset_offenses(message.chat.id, message.from_user.id)

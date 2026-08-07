@@ -24,6 +24,12 @@ def get_mood() -> str:
 
 
 def style(text: str) -> str:
-    # Настроение учитывается при выборе реплики. Не приклеиваем
-    # второй случайный emoji: он делал реплики однообразными.
-    return text
+    mood = get_mood()
+    prefix = {
+        "happy": "😄 ",
+        "sarcastic": "😏 ",
+        "sleepy": "😴 ",
+        "work": "🛡 ",
+        "angry_spammers": "⚔️ ",
+    }.get(mood, "")
+    return prefix + text

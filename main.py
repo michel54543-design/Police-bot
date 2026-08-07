@@ -3,424 +3,360 @@ import json
 import logging
 import os
 import re
+import threading
+from contextlib import suppress
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command
-from aiogram.types import CallbackQuery, ChatMemberUpdated, Message, User
-from aiohttp import web
+from aiogram.enums import ChatType
+from aiogram.filters import Command, CommandStart
+from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 from dotenv import load_dotenv
 
-import captcha
+import auto_news
+import challenges
 import conversation
-import daily_stats
+import image_job_ad_filter
+import join_manager
 import jokes
 import luck
 import moderation
 import predictions
-import question_chat
+import playful_mode
+import riddles
+import stats
 import stories
-import teasing
 import toasts
-from personality import style
-from reply_selector import choose
-from utils import human_pause, safe_delete_message
-
-
-BASE_DIR = Path(__file__).resolve().parent
+from utils import safe_delete_message
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+logger = logging.getLogger("police.main")
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN", "").strip()
 if not TOKEN:
-    raise RuntimeError("Добавьте BOT_TOKEN в переменные окружения Render")
+    raise RuntimeError("BOT_TOKEN is not set")
 
-logging.basicConfig(level=logging.INFO)
-bot = Bot(TOKEN)
-dp = Dispatcher()
-
-BOT_ID: int | None = None
-BOT_USERNAME: str | None = None
-BOT_NAME: str | None = None
+BASE_DIR = Path(__file__).resolve().parent
 OWNER_USERNAME = "michel54543"
 YURA_USERNAME = "darkboogimen"
 
+with (BASE_DIR / "owner_replies.json").open("r", encoding="utf-8") as f:
+    OWNER_REPLIES = json.load(f)
+with (BASE_DIR / "yura_replies.json").open("r", encoding="utf-8") as f:
+    YURA_REPLIES = json.load(f)
 
-def load_list(filename: str) -> list[str]:
-    with (BASE_DIR / filename).open("r", encoding="utf-8") as file:
-        data = json.load(file)
-    if not isinstance(data, list):
-        raise ValueError(f"{filename} должен содержать список строк")
-    return [str(item).strip() for item in data if str(item).strip()]
+BOT_ID = 0
+BOT_USERNAME = ""
+MOLDOVA_TZ = ZoneInfo("Europe/Chisinau")
+
+AD_PHRASES = (
+    "заработок без вложений", "доход в день", "работа на дому", "работа из дома",
+    "пишите менеджеру", "ставки на спорт", "казино", "инвестиции с гарантией",
+    "крипто доход", "легкие деньги", "лёгкие деньги", "вакансия удаленно", "вакансия удалённо",
+)
+AD_DOMAINS = (
+    "t.me/", "telegram.me/", "wa.me/", "instagram.com/", "facebook.com/",
+    "vk.com/", "discord.gg/", "bit.ly/", "tinyurl.com/",
+)
 
 
-OWNER_MESSAGES = load_list("owner_replies.json")
-YURA_MESSAGES = load_list("yura_replies.json")
-
-
-def looks_like_ad(message: Message) -> bool:
-    """Проверяет текст, подпись и Telegram-сущности на явную рекламу.
-
-    Проверка выполняется до разговорного режима, поэтому Police может молчать
-    в обычном чате, но продолжает удалять рекламные сообщения.
-    """
-    text = message.text or message.caption or ""
-    teasing.remember_active(message)
-    lowered = " ".join(text.lower().split())
-
-    # Любая кликабельная внешняя ссылка считается подозрительной рекламой.
+def _entity_has_link(message: Message) -> tuple[bool, bool]:
+    has_clickable_link = False
+    has_text_link = False
     for entity in list(message.entities or []) + list(message.caption_entities or []):
-        entity_type = getattr(entity.type, "value", entity.type)
-        if entity_type in {"url", "text_link"}:
-            return True
-
-    markers = [
-        "http://", "https://", "t.me/", "telegram.me/", "www.",
-        "заработок", "заработать", "подработка", "доход без",
-        "инвест", "крипт", "казино", "ставки", "букмекер",
-        "розыгрыш", "промокод", "пиши в личку", "пишите в личку",
-        "переходи по ссылке", "подписывайся", "подпишись на канал",
-        "ищу людей", "набор в команду", "удаленная работа",
-    ]
-    return any(marker in lowered for marker in markers)
+        etype = getattr(entity.type, "value", str(entity.type))
+        if etype == "url":
+            has_clickable_link = True
+        elif etype == "text_link":
+            has_text_link = True
+    return has_clickable_link, has_text_link
 
 
-def member_status(value: object) -> str:
-    return str(getattr(value, "value", value))
+def looks_like_ad(message: Message, *, allow_plain_links: bool) -> bool:
+    text = (message.text or message.caption or "").lower()
+    has_clickable_link, has_text_link = _entity_has_link(message)
 
-
-def user_just_joined(event: ChatMemberUpdated) -> bool:
-    old_status = member_status(event.old_chat_member.status)
-    new_status = member_status(event.new_chat_member.status)
-    return old_status in {"left", "kicked"} and new_status in {
-        "member", "restricted", "administrator", "creator"
-    }
-
-
-def user_just_left(event: ChatMemberUpdated) -> bool:
-    old_status = member_status(event.old_chat_member.status)
-    new_status = member_status(event.new_chat_member.status)
-    return old_status in {"member", "restricted", "administrator", "creator"} and new_status in {"left", "kicked"}
-
-
-async def process_new_user(message: Message | None, chat_id: int, user: User) -> None:
-    """Запускает защиту нового участника независимо от типа join-события."""
-    if user.id == BOT_ID:
-        return
-    if captcha.is_pending(chat_id, user.id) or captcha.has_passed(chat_id, user.id):
-        return
-
-    if user.is_bot:
-        try:
-            await bot.ban_chat_member(chat_id, user.id)
-        except Exception as error:
-            logging.exception("Ошибка бана вошедшего бота: %r", error)
-        return
-
-    try:
-        if message is not None:
-            await captcha.start(bot, message, user)
-        else:
-            await captcha.start_for_chat(bot, chat_id, user)
-        logging.info("Капча выдана новому участнику chat_id=%s user_id=%s", chat_id, user.id)
-    except Exception as error:
-        logging.exception("Не удалось запустить капчу chat_id=%s user_id=%s: %r", chat_id, user.id, error)
-
-
-def is_owner(message: Message) -> bool:
-    if not message.from_user:
-        return False
-    return (message.from_user.username or "").lower() == OWNER_USERNAME
-
-
-def is_yura(message: Message) -> bool:
-    if not message.from_user:
-        return False
-    return (message.from_user.username or "").lower() == YURA_USERNAME
-
-
-def addressed_to_bot(message: Message) -> bool:
-    """Возвращает True только при явном обращении к Police.
-
-    Обычное упоминание слова в середине разговора не считается обращением.
-    Модерация рекламы и нарушений выполняется до этой проверки.
-    """
-    chat_type = getattr(message.chat.type, "value", message.chat.type)
-    if chat_type == "private":
+    if (has_clickable_link or has_text_link) and not allow_plain_links:
         return True
-
-    reply_user = getattr(getattr(message, "reply_to_message", None), "from_user", None)
-    if BOT_ID is not None and reply_user is not None and reply_user.id == BOT_ID:
+    if any(domain in text for domain in AD_DOMAINS) and not allow_plain_links:
         return True
-
-    raw_text = message.text or message.caption or ""
-    text = " ".join(raw_text.lower().strip().split())
-    if not text:
-        return False
-
-    if BOT_USERNAME and re.search(
-        rf"(?<![\w@])@{re.escape(BOT_USERNAME.lower())}(?!\w)", text
-    ):
+    # Рекламные формулировки блокируются даже у участников, прошедших капчу.
+    if any(phrase in text for phrase in AD_PHRASES):
         return True
-
-    # Явное обращение в начале: «Police», «Police, привет», «Police ты здесь?»
-    if re.match(r"^police(?:$|[\s,.:;!?—-])", text):
-        return True
-
-    # Явное обращение в конце: «ответь, Police»
-    if re.search(r"(?:^|[\s,.:;!?—-])police[.!?]*$", text):
-        return True
-
-    # Слово «бот» учитывается только как отдельное обращение, а не внутри фразы.
-    if re.match(r"^бот(?:$|[,.:;!?—-])", text) or re.search(
-        r"(?:^|[,.:;!?—-]\s*)бот[.!?]*$", text
-    ):
-        return True
-
-    if BOT_NAME:
-        name = " ".join(BOT_NAME.lower().strip().split())
-        if text == name or text.startswith(name + ",") or text.startswith(name + "!") or text.startswith(name + "?"):
-            return True
-
     return False
 
 
-def owner_reply() -> str:
-    return choose("owner", OWNER_MESSAGES)
+def is_bot_addressed(message: Message) -> bool:
+    text = (message.text or message.caption or "").lower()
+    if BOT_USERNAME and f"@{BOT_USERNAME.lower()}" in text:
+        return True
+    if re.search(r"(?:^|\s)(?:police(?:\s+bot)?|полис|полицейский|бот)(?:\s|$|[,.!?;:])", text):
+        return True
+    reply = message.reply_to_message
+    return bool(reply and reply.from_user and reply.from_user.id == BOT_ID)
 
 
-def yura_reply() -> str:
-    return choose("yura", YURA_MESSAGES)
+def health_server() -> None:
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"OK")
 
+        def log_message(self, *_args):
+            return
 
-@dp.message(F.new_chat_members)
-async def new_members(message: Message) -> None:
-    await safe_delete_message(bot, message.chat.id, message.message_id)
-    for user in message.new_chat_members:
-        await process_new_user(message, message.chat.id, user)
-
-
-@dp.chat_member()
-async def chat_member_update(event: ChatMemberUpdated) -> None:
-    """Надёжно обрабатывает вход и выход участника через chat_member update."""
-    user = event.new_chat_member.user
-    old_status = member_status(event.old_chat_member.status)
-    new_status = member_status(event.new_chat_member.status)
-    logging.info(
-        "chat_member update chat_id=%s user_id=%s %s -> %s",
-        event.chat.id, user.id, old_status, new_status,
-    )
-
-    if user_just_left(event):
-        captcha.forget_user(event.chat.id, user.id)
-        return
-
-    if user_just_joined(event):
-        await process_new_user(None, event.chat.id, user)
-
-
-@dp.callback_query(F.data.startswith("captcha:"))
-async def captcha_callback(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    chat_id = callback.message.chat.id
-    user_id = callback.from_user.id
-    data = captcha.pending.get((chat_id, user_id))
-    if not data:
-        await callback.answer("Проверка уже завершена.", show_alert=True)
-        return
-
-    selected = int(callback.data.split(":", 1)[1])
-    if selected == data["correct"]:
-        await callback.answer("✅ Верно!")
-        await captcha.pass_user(bot, chat_id, user_id)
-        return
-
-    await callback.answer("❌ Неверно. Попробуйте ещё раз.", show_alert=True)
-    await captcha.replace_question(bot, chat_id, user_id)
-
-
-@dp.message(Command("анекдот"))
-async def anecdote(message: Message) -> None:
-    if not message.from_user:
-        return
-    if captcha.is_pending(message.chat.id, message.from_user.id):
-        return
-    if not jokes.can_use(message.from_user.id):
-        await message.answer(jokes.cooldown_text(message.from_user.id))
-        return
-    await message.answer(jokes.get_joke(message.from_user.id))
-
-
-@dp.message(Command("шутка"))
-async def short_joke(message: Message) -> None:
-    if not message.from_user:
-        return
-    if captcha.is_pending(message.chat.id, message.from_user.id):
-        return
-    if not jokes.can_use(message.from_user.id):
-        await message.answer(jokes.cooldown_text(message.from_user.id))
-        return
-    await message.answer(jokes.get_short_joke(message.from_user.id))
-
-
-async def safe_answer(message: Message, text: str) -> None:
-    try:
-        await message.answer(text)
-    except Exception as error:
-        print("Ошибка отправки ответа команды:", repr(error))
-
-
-@dp.message(Command("история"))
-async def story_command(message: Message) -> None:
-    if not message.from_user:
-        return
-    if captcha.is_pending(message.chat.id, message.from_user.id):
-        return
-    if not stories.can_use(message.from_user.id):
-        await safe_answer(message, stories.cooldown_text(message.from_user.id))
-        return
-    await safe_answer(message, stories.get_story(message.from_user.id))
-
-
-@dp.message(Command("тост"))
-async def toast_command(message: Message) -> None:
-    if not message.from_user:
-        return
-    if captcha.is_pending(message.chat.id, message.from_user.id):
-        return
-    if not toasts.can_use(message.from_user.id):
-        await safe_answer(message, toasts.cooldown_text(message.from_user.id))
-        return
-    await safe_answer(message, toasts.get_toast(message.from_user.id))
-
-
-@dp.message(Command("предсказание"))
-async def prediction_command(message: Message) -> None:
-    if not message.from_user:
-        return
-    if captcha.is_pending(message.chat.id, message.from_user.id):
-        return
-    if not predictions.can_use(message.from_user.id):
-        await safe_answer(message, predictions.cooldown_text(message.from_user.id))
-        return
-    await safe_answer(message, predictions.get_prediction(message.from_user.id))
-
-
-@dp.message(Command("фарт"))
-async def luck_command(message: Message) -> None:
-    if not message.from_user:
-        return
-    if captcha.is_pending(message.chat.id, message.from_user.id):
-        return
-    if not luck.can_use(message.from_user.id):
-        await safe_answer(message, luck.cooldown_text(message.from_user.id))
-        return
-    await safe_answer(message, luck.get_luck(message.from_user.id))
-
-
-@dp.message()
-async def all_messages(message: Message) -> None:
-    if not message.from_user:
-        return
-
-    text = message.text or message.caption or ""
-    if looks_like_ad(message):
-        await safe_delete_message(bot, message.chat.id, message.message_id)
-        return
-
-    if captcha.is_pending(message.chat.id, message.from_user.id):
-        await safe_delete_message(bot, message.chat.id, message.message_id)
-        return
-
-    addressed = addressed_to_bot(message)
-
-    if await moderation.handle_bad_language(bot, message, addressed):
-        return
-
-    if is_owner(message) and await teasing.handle_owner_private_command(message):
-        return
-
-    # Подколы — единственное явно включаемое исключение из «молчаливого» режима.
-    if await teasing.maybe_tease(message):
-        return
-
-    if not addressed:
-        return
-
-    if is_owner(message) and addressed:
-        await human_pause(message)
-        await message.answer(owner_reply())
-        return
-
-    if is_yura(message) and addressed:
-        await human_pause(message)
-        await message.reply(yura_reply())
-        return
-
-    if text and conversation.looks_rude(text) and conversation.can_reply_rude(message.from_user.id):
-        await human_pause(message)
-        rude_text = conversation.rude_reply(message.from_user.id)
-        if is_yura(message):
-            rude_text = f"Юра, {rude_text}"
-        await message.reply(rude_text)
-        return
-
-    if message.text:
-        conversation.remember(message.from_user.id, message.text)
-        reply = teasing.playful_reply(message)
-        if not reply:
-            reply = question_chat.reply_for(message.from_user.id, message.text)
-        if not reply:
-            reply = conversation.reply_for(message.from_user.id, message.text, addressed=True)
-        if reply:
-            await human_pause(message)
-            reply = teasing.maybe_invite_other(message, style(reply))
-            await message.answer(reply)
-
-
-async def health(request: web.Request) -> web.Response:
-    return web.Response(text="Police Bot is running")
-
-
-async def start_health_server() -> web.AppRunner:
-    app = web.Application()
-    app.router.add_get("/", health)
-    app.router.add_get("/health", health)
-    runner = web.AppRunner(app)
-    await runner.setup()
     port = int(os.getenv("PORT", "10000"))
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logging.info("Health server started on port %s", port)
-    return runner
+    ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+
+
+async def is_admin(bot: Bot, chat_id: int, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id, user_id)
+        status = getattr(member.status, "value", str(member.status))
+        return status in {"administrator", "creator"}
+    except Exception:
+        return False
+
+
+async def daily_report_worker(bot: Bot) -> None:
+    """Надёжно отправляет суточную сводку один раз в 23:59 по Молдове."""
+    while True:
+        now = datetime.now(MOLDOVA_TZ)
+        if now.hour == 23 and now.minute == 59 and not stats.report_already_sent():
+            delivered = False
+            report = stats.daily_report_text()
+            for chat_id in stats.chat_ids():
+                try:
+                    await bot.send_message(chat_id, report)
+                    delivered = True
+                except Exception as error:
+                    logger.exception("DAILY REPORT SEND ERROR chat_id=%s: %r", chat_id, error)
+            if delivered:
+                stats.mark_report_sent()
+                logger.info("DAILY REPORT SENT date=%s", now.date().isoformat())
+        await asyncio.sleep(10)
+
+
+async def send_command_result(message: Message, module, getter_name: str) -> None:
+    if not message.from_user:
+        return
+    uid = message.from_user.id
+    if not module.can_use(uid):
+        await message.answer(module.cooldown_text(uid))
+        return
+    await message.answer(getattr(module, getter_name)(uid))
+
+
+def register_handlers(dp: Dispatcher, bot: Bot) -> None:
+    @dp.message(CommandStart())
+    async def start_handler(message: Message) -> None:
+        if message.chat.type == ChatType.PRIVATE and message.from_user:
+            handled = await join_manager.handle_private_start(bot, message.from_user.id)
+            if handled:
+                return
+        await message.answer("🛡 Police Bot на связи.")
+
+    @dp.message(Command("анекдот"))
+    async def joke_handler(message: Message) -> None:
+        await send_command_result(message, jokes, "get_joke")
+
+    @dp.message(Command("история"))
+    async def story_handler(message: Message) -> None:
+        await send_command_result(message, stories, "get_story")
+
+    @dp.message(Command("тост"))
+    async def toast_handler(message: Message) -> None:
+        await send_command_result(message, toasts, "get_toast")
+
+    @dp.message(Command("предсказание"))
+    async def prediction_handler(message: Message) -> None:
+        await send_command_result(message, predictions, "get_prediction")
+
+    @dp.message(Command("фарт"))
+    async def luck_handler(message: Message) -> None:
+        await send_command_result(message, luck, "get_luck")
+
+    @dp.message(Command("загадка"))
+    async def riddle_handler(message: Message) -> None:
+        if not message.from_user:
+            return
+        parts = (message.text or "").split(maxsplit=1)
+        requested_category = parts[1] if len(parts) > 1 else None
+        if requested_category and not riddles.normalize_category(requested_category):
+            await message.answer("Категории: обычная, смешная, логическая, с_подвохом.")
+            return
+        await message.answer(riddles.new_riddle(
+            message.chat.id,
+            message.from_user.id,
+            requested_category,
+        ))
+
+    @dp.message(Command("испытание"))
+    async def challenge_handler(message: Message) -> None:
+        await message.answer(challenges.get_challenge())
+
+    @dp.message(Command("осадавкл"))
+    async def raid_on(message: Message) -> None:
+        if not message.from_user or (message.from_user.username or "").lower() not in {OWNER_USERNAME, YURA_USERNAME}:
+            return
+        join_manager.set_raid_mode(True, forced=True)
+        await message.answer(join_manager.raid_status_text())
+
+    @dp.message(Command("осадавыкл"))
+    async def raid_off(message: Message) -> None:
+        if not message.from_user or (message.from_user.username or "").lower() not in {OWNER_USERNAME, YURA_USERNAME}:
+            return
+        join_manager.set_raid_mode(False)
+        await message.answer(join_manager.raid_status_text())
+
+    @dp.message(Command("осадастатус", "нагрузка"))
+    async def raid_status(message: Message) -> None:
+        if not message.from_user or (message.from_user.username or "").lower() not in {OWNER_USERNAME, YURA_USERNAME}:
+            return
+        await message.answer(join_manager.raid_status_text())
+
+    @dp.callback_query(F.data.startswith("captcha:"))
+    async def captcha_callback(callback: CallbackQuery) -> None:
+        await join_manager.handle_callback(bot, callback)
+
+    @dp.callback_query(F.data == "verify:open")
+    async def verify_callback(callback: CallbackQuery) -> None:
+        await join_manager.handle_verify_button(bot, callback)
+
+    @dp.chat_member()
+    async def chat_member_handler(event: ChatMemberUpdated) -> None:
+        await join_manager.handle_chat_member_update(bot, event)
+
+    @dp.message(F.new_chat_members)
+    async def new_members_handler(message: Message) -> None:
+        await join_manager.handle_new_chat_members(bot, message)
+
+    @dp.message()
+    async def general_handler(message: Message) -> None:
+        if not message.from_user:
+            return
+        if message.chat.type == ChatType.PRIVATE:
+            username = (message.from_user.username or "").lower()
+            text = (message.text or message.caption or "").strip()
+            lowered = text.lower().replace("ё", "е")
+            if username == OWNER_USERNAME and lowered.startswith("начать шутить"):
+                target = playful_mode.parse_target(text)
+                if not target:
+                    await message.answer("Напишите так: начать шутить @имя_пользователя")
+                    return
+                playful_mode.arm(target)
+                await message.answer(
+                    f"😄 Принято. Когда @{target} напишет в общей группе, "
+                    "я обращусь к нему с одной шуткой. Повторяться по таймеру не буду."
+                )
+                return
+            if username == OWNER_USERNAME and lowered.startswith("перестать шутить"):
+                target = playful_mode.parse_target(text)
+                if not target:
+                    await message.answer("Напишите так: перестать шутить @имя_пользователя")
+                    return
+                removed = playful_mode.cancel(target)
+                await message.answer("Команда отменена." if removed else "Для этого участника активной команды нет.")
+                return
+            return
+        if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            return
+
+        stats.register_chat(message.chat.id)
+        pending_captcha = join_manager.is_pending(message.chat.id, message.from_user.id)
+
+        if looks_like_ad(message, allow_plain_links=not pending_captcha):
+            if not await is_admin(bot, message.chat.id, message.from_user.id):
+                await safe_delete_message(bot, message.chat.id, message.message_id)
+                stats.increment("ads_removed", chat_id=message.chat.id)
+                logger.warning("AD REMOVED chat_id=%s user_id=%s", message.chat.id, message.from_user.id)
+                return
+
+        if message.photo and await image_job_ad_filter.image_contains_job_ad(bot, message):
+            if not await is_admin(bot, message.chat.id, message.from_user.id):
+                await safe_delete_message(bot, message.chat.id, message.message_id)
+                stats.increment("ads_removed", chat_id=message.chat.id)
+                return
+
+        addressed = is_bot_addressed(message)
+        if await moderation.handle_bad_language(bot, message, addressed_to_bot=addressed):
+            return
+
+        text = message.text or message.caption or ""
+        conversation.remember(message.from_user.id, text)
+        if not message.from_user.is_bot:
+            display_name = message.from_user.full_name
+            if message.from_user.username:
+                display_name = f"@{message.from_user.username}"
+            conversation.register_activity(message.chat.id, message.from_user.id, display_name)
+
+            opener = playful_mode.take_opener(message.from_user.username or "", display_name)
+            if opener:
+                await message.reply(opener)
+                return
+
+        riddle_reply = riddles.check_answer(message.chat.id, message.from_user.id, text)
+        if riddle_reply:
+            await message.reply(riddle_reply)
+            return
+
+        if not conversation.should_respond(message.from_user.id, text, addressed):
+            return
+
+        username = (message.from_user.username or "").lower()
+        if addressed and username == OWNER_USERNAME:
+            reply = OWNER_REPLIES[message.from_user.id % len(OWNER_REPLIES)]
+        elif addressed and username == YURA_USERNAME:
+            reply = YURA_REPLIES[message.from_user.id % len(YURA_REPLIES)]
+        else:
+            reply = conversation.reply_for(
+                message.from_user.id,
+                text,
+                addressed=addressed,
+                chat_id=message.chat.id,
+            )
+        if reply:
+            await message.reply(reply)
+
+    auto_news.register(dp, bot)
 
 
 async def main() -> None:
-    global BOT_ID
-    global BOT_NAME
-    global BOT_USERNAME
+    global BOT_ID, BOT_USERNAME
+    bot = Bot(TOKEN)
+    dp = Dispatcher()
 
-    health_runner = await start_health_server()
-    stats_task = asyncio.create_task(daily_stats.reporter(bot))
+    me = await bot.get_me()
+    BOT_ID = me.id
+    BOT_USERNAME = me.username or ""
+    join_manager.set_bot_identity(BOT_ID, BOT_USERNAME)
+
+    stats.ensure_file()
+    await bot.delete_webhook(drop_pending_updates=True)
+    await join_manager.start_workers()
+    await join_manager.restore_pending(bot)
+    await auto_news.start_worker(bot)
+    register_handlers(dp, bot)
+    report_task = asyncio.create_task(daily_report_worker(bot))
+
+    logger.info("Police Bot started as @%s", BOT_USERNAME)
     try:
-        me = await bot.get_me()
-        BOT_ID = me.id
-        BOT_USERNAME = me.username
-        BOT_NAME = me.full_name
-        await bot.delete_webhook(drop_pending_updates=True)
-        # Явно запрашиваем chat_member: без него Telegram может присылать только
-        # обычные сообщения, и входы новых участников останутся незамеченными.
-        await dp.start_polling(
-            bot,
-            allowed_updates=["message", "callback_query", "chat_member", "my_chat_member"],
-        )
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
-        stats_task.cancel()
-        await asyncio.gather(stats_task, return_exceptions=True)
-        await health_runner.cleanup()
+        report_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await report_task
+        await auto_news.stop_worker()
+        await join_manager.stop_workers()
         await bot.session.close()
 
 
 if __name__ == "__main__":
+    threading.Thread(target=health_server, daemon=True).start()
     asyncio.run(main())
