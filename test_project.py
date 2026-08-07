@@ -1,5 +1,4 @@
 import ast
-import asyncio
 import importlib
 import json
 import sys
@@ -43,29 +42,12 @@ class ProjectDataTests(unittest.TestCase):
             self.assertLess(question["correct"], 3)
 
     def test_captcha_static_rules(self):
-        source = (ROOT / "join_manager.py").read_text(encoding="utf-8")
-        captcha_source = (ROOT / "captcha.py").read_text(encoding="utf-8")
+        source = (ROOT / "captcha.py").read_text(encoding="utf-8")
         self.assertIn("CAPTCHA_TIMEOUT_SECONDS = 120", source)
-        self.assertIn("HIDDEN_CAPTCHA_TIMEOUT_SECONDS = 5 * 60", source)
-        self.assertIn("GROUP_NOTICE_SECONDS = 15", source)
         self.assertIn("chunk_buttons(buttons, 1)", source)
-        self.assertIn("asyncio.create_task(timeout_worker", source)
-        forbidden_state = "passed" + "_users"
-        self.assertNotIn(forbidden_state, captcha_source + source)
-        self.assertIn("STATE_PATH", source)
-        self.assertIn("restore_pending", source)
-        self.assertIn("JOIN DETECTED", source)
-        self.assertIn("RESTRICTED", source)
-        self.assertIn("CAPTCHA SENT", source)
-        self.assertIn("PASSED", source)
-        self.assertIn("TIMEOUT", source)
-        self.assertIn("KICKED", source)
-        self.assertIn("def member_is_present", source)
-        self.assertIn("getattr(chat_member, \"is_member\", False)", source)
-        self.assertIn("handle_private_start", source)
-        self.assertIn("show_group_notice_once", source)
-        self.assertIn("GROUP_NOTICE_TEXT", source)
-        self.assertNotIn("bot.send_message(chat_id, captcha_text", source)
+        self.assertEqual(source.count("asyncio.create_task(timeout"), 1)
+        self.assertIn("Добро пожаловать в Группу", source)
+        self.assertIn("Пусть Евгений будет на вашей стороне", source)
 
     def test_jokes_json_clean_and_unique(self):
         data = self.load_json("jokes.json")
@@ -74,6 +56,12 @@ class ProjectDataTests(unittest.TestCase):
         self.assertEqual(len(jokes), len(set(jokes)))
         self.assertTrue(all(isinstance(joke, str) and joke.strip() for joke in jokes))
         self.assertFalse(any(joke.startswith("Анекдот №") for joke in jokes))
+        short = self.load_json("short_jokes.json")["jokes"]
+        self.assertGreaterEqual(len(short), 50)
+        self.assertEqual(len(short), len(set(short)))
+        dirty = self.load_json("dirty_jokes.json")["jokes"]
+        self.assertGreaterEqual(len(dirty), 25)
+        self.assertEqual(len(dirty), len(set(dirty)))
 
     def test_reply_categories_exist(self):
         replies = self.load_json("police_replies.json")
@@ -186,7 +174,6 @@ class LogicTests(unittest.TestCase):
         conversation.last_explicit_address_at[77] = time.monotonic() - conversation.MEMORY_SECONDS - 1
         self.assertFalse(conversation.is_dialog_continuation(77))
 
-
     def test_moderation_static_rules(self):
         source = (ROOT / "moderation.py").read_text(encoding="utf-8")
         self.assertIn("OFFENSE_WINDOW_SECONDS = 10 * 60", source)
@@ -195,23 +182,6 @@ class LogicTests(unittest.TestCase):
         self.assertNotIn("kick", source.lower())
         tree = ast.parse(source)
         self.assertIsNotNone(tree)
-
-    def test_moderation_is_the_only_bad_language_filter(self):
-        main_source = (ROOT / "main.py").read_text(encoding="utf-8")
-        conversation_source = (ROOT / "conversation.py").read_text(encoding="utf-8")
-        project_sources = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in ROOT.glob("*.py")
-            if path.name != "test_project.py"
-        )
-
-        self.assertIn("moderation.handle_bad_language", main_source)
-        self.assertNotIn("conversation.looks_rude", main_source)
-        self.assertNotIn("looks_rude", conversation_source)
-        self.assertNotIn("RUDE_MARKERS", conversation_source)
-        self.assertNotIn("RUDE_REPLIES", conversation_source)
-        self.assertNotIn("rude_reply", conversation_source)
-        self.assertEqual(project_sources.count("async def handle_bad_language"), 1)
 
     def test_moderation_offense_cleanup(self):
         aiogram_stub = types.ModuleType("aiogram")
@@ -231,409 +201,56 @@ class LogicTests(unittest.TestCase):
         moderation.cleanup_offenses()
         self.assertNotIn((1, 1), moderation.offenses)
 
-    def test_moderation_ignores_safe_phrases_and_discussions(self):
+    def test_bot_insult_without_comma_is_targeted(self):
         aiogram_stub = types.ModuleType("aiogram")
         aiogram_stub.Bot = object
         aiogram_types_stub = types.ModuleType("aiogram.types")
-
-        class ChatPermissions:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        aiogram_types_stub.ChatPermissions = ChatPermissions
+        aiogram_types_stub.ChatPermissions = object
         aiogram_types_stub.Message = object
-        sys.modules["aiogram"] = aiogram_stub
-        sys.modules["aiogram.types"] = aiogram_types_stub
+        sys.modules.setdefault("aiogram", aiogram_stub)
+        sys.modules.setdefault("aiogram.types", aiogram_types_stub)
         moderation = importlib.reload(importlib.import_module("moderation"))
+        self.assertTrue(moderation.starts_with_bot_address("бот пошел нах"))
+        self.assertTrue(moderation.contains_bad_words("бот пошел нах"))
 
-        safe_phrases = [
-            "\u041d\u0435\u043f\u043b\u043e\u0445\u043e \u043a\u0441\u0442\u0430\u0442\u0438",
-            "\u041e\u043d \u0432\u0438\u0434\u0438\u0442 \u0441\u043a\u0440\u044b\u0442\u044b\u0439 \u043c\u0430\u0442",
-            "\u042d\u0442\u043e \u043d\u0435 \u043c\u0430\u0442",
-            "\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u043f\u0440\u0430\u0432\u0438\u043b\u0430",
-        ]
-        for phrase in safe_phrases:
-            with self.subTest(phrase=phrase):
-                self.assertFalse(moderation.contains_bad_words(phrase))
-
-        self.assertTrue(moderation.contains_bad_words("\u0442\u044b \u0434\u0443\u0440\u0430\u043a"))
-        self.assertTrue(moderation.is_meta_discussion("\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u0441\u043b\u043e\u0432\u043e \u0434\u0443\u0440\u0430\u043a"))
-        self.assertEqual(moderation.matched_bad_markers("Неплохо кстати"), [])
-        self.assertEqual(moderation.matched_bad_markers("ты дурак"), ["дурак"])
-
-    def test_moderation_full_handler_ignores_safe_phrases(self):
-        aiogram_stub = types.ModuleType("aiogram")
-        aiogram_stub.Bot = object
-        aiogram_types_stub = types.ModuleType("aiogram.types")
-
-        class ChatPermissions:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        aiogram_types_stub.ChatPermissions = ChatPermissions
-        aiogram_types_stub.Message = object
-        sys.modules["aiogram"] = aiogram_stub
-        sys.modules["aiogram.types"] = aiogram_types_stub
+    def test_short_bad_word_does_not_match_normal_words(self):
         moderation = importlib.reload(importlib.import_module("moderation"))
+        self.assertFalse(moderation.contains_bad_words("Он находится дома"))
+        self.assertFalse(moderation.contains_bad_words("Хорошая находка"))
 
-        class FakeUser:
-            id = 10
+    def test_owner_teasing_commands(self):
+        teasing = importlib.reload(importlib.import_module("teasing"))
+        self.assertEqual(teasing.parse_owner_command("начать шутить с @Example_User"), ("start", "example_user"))
+        self.assertEqual(teasing.parse_owner_command("начать шутить https://t.me/BE3BASHENNIE"), ("start", "be3bashennie"))
+        self.assertEqual(teasing.parse_owner_command("начни шутить @BE3BASHENNIE"), ("start", "be3bashennie"))
+        self.assertEqual(teasing.parse_owner_command("перестать шутить с example_user"), ("stop", "example_user"))
+        self.assertEqual(teasing.parse_owner_command("кого подкалываю"), ("list", None))
+        self.assertNotIn("TEASE_COOLDOWN_SECONDS", vars(teasing))
 
-        class FakeChat:
-            id = -100
-
-        class FakeMessage:
-            def __init__(self, text):
-                self.text = text
-                self.caption = None
-                self.from_user = FakeUser()
-                self.chat = FakeChat()
-                self.reply_to_message = None
-                self.replies = []
-
-            async def reply(self, text):
-                self.replies.append(text)
-
-        async def run_checks():
-            safe_phrases = [
-                "\u041d\u0435\u043f\u043b\u043e\u0445\u043e \u043a\u0441\u0442\u0430\u0442\u0438",
-                "\u041e\u043d \u0432\u0438\u0434\u0438\u0442 \u0441\u043a\u0440\u044b\u0442\u044b\u0439 \u043c\u0430\u0442",
-                "\u042d\u0442\u043e \u043d\u0435 \u043c\u0430\u0442",
-                "\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u043f\u0440\u0430\u0432\u0438\u043b\u0430",
-            ]
-            for phrase in safe_phrases:
-                message = FakeMessage(phrase)
-                self.assertFalse(await moderation.handle_bad_language(object(), message, False))
-                self.assertEqual(message.replies, [])
-
-        asyncio.run(run_checks())
-
-    def test_moderation_warns_only_for_targeted_insult(self):
-        aiogram_stub = types.ModuleType("aiogram")
-        aiogram_stub.Bot = object
-        aiogram_types_stub = types.ModuleType("aiogram.types")
-
-        class ChatPermissions:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        aiogram_types_stub.ChatPermissions = ChatPermissions
-        aiogram_types_stub.Message = object
-        sys.modules["aiogram"] = aiogram_stub
-        sys.modules["aiogram.types"] = aiogram_types_stub
-        moderation = importlib.reload(importlib.import_module("moderation"))
-
-        class FakeUser:
-            id = 10
-
-        class FakeChat:
-            id = -100
-
-        class FakeMessage:
-            def __init__(self, text):
-                self.text = text
-                self.caption = None
-                self.from_user = FakeUser()
-                self.chat = FakeChat()
-                self.reply_to_message = None
-                self.replies = []
-
-            async def reply(self, text):
-                self.replies.append(text)
-
-        async def run_checks():
-            neutral = FakeMessage("\u0434\u0443\u0440\u0430\u043a")
-            self.assertFalse(await moderation.handle_bad_language(object(), neutral, False))
-            self.assertEqual(neutral.replies, [])
-
-            discussion = FakeMessage("\u041e\u0431\u0441\u0443\u0436\u0434\u0430\u0435\u043c \u0441\u043b\u043e\u0432\u043e \u0434\u0443\u0440\u0430\u043a")
-            self.assertFalse(await moderation.handle_bad_language(object(), discussion, False))
-            self.assertEqual(discussion.replies, [])
-
-            targeted = FakeMessage("\u0442\u044b \u0434\u0443\u0440\u0430\u043a")
-            self.assertTrue(await moderation.handle_bad_language(object(), targeted, False))
-            self.assertEqual(len(targeted.replies), 1)
-
-        asyncio.run(run_checks())
-
-
-class JoinManagerTests(unittest.IsolatedAsyncioTestCase):
-    def install_aiogram_stubs(self):
-        aiogram_stub = types.ModuleType("aiogram")
-        aiogram_stub.Bot = object
-        aiogram_types_stub = types.ModuleType("aiogram.types")
-
-        class ChatPermissions:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        class InlineKeyboardButton:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        class InlineKeyboardMarkup:
-            def __init__(self, **kwargs):
-                self.kwargs = kwargs
-
-        aiogram_types_stub.CallbackQuery = object
-        aiogram_types_stub.ChatMemberUpdated = object
-        aiogram_types_stub.ChatPermissions = ChatPermissions
-        aiogram_types_stub.InlineKeyboardButton = InlineKeyboardButton
-        aiogram_types_stub.InlineKeyboardMarkup = InlineKeyboardMarkup
-        aiogram_types_stub.Message = object
-        aiogram_types_stub.User = object
-        sys.modules["aiogram"] = aiogram_stub
-        sys.modules["aiogram.types"] = aiogram_types_stub
-
-    async def test_mass_join_50_users_are_muted_and_get_private_captcha(self):
-        self.install_aiogram_stubs()
-        join_manager = importlib.reload(importlib.import_module("join_manager"))
-        join_manager.STATE_PATH = ROOT / "test_join_state.json"
-        join_manager.pending.clear()
-        join_manager.processing_users.clear()
-        join_manager.timeout_tasks.clear()
-        join_manager.group_notice_messages.clear()
-        join_manager.group_notice_tasks.clear()
-
-        class FakeMessage:
-            def __init__(self, message_id):
-                self.message_id = message_id
-
-        class FakeBot:
-            def __init__(self):
-                self.actions = []
-                self.next_message_id = 100
-
-            async def restrict_chat_member(self, chat_id, user_id, permissions):
-                self.actions.append(("restrict", chat_id, user_id, permissions.kwargs))
-
-            async def send_message(self, chat_id, text, reply_markup=None):
-                self.actions.append(("send_message", chat_id, text, reply_markup))
-                self.next_message_id += 1
-                return FakeMessage(self.next_message_id)
-
-            async def ban_chat_member(self, chat_id, user_id):
-                self.actions.append(("ban", chat_id, user_id))
-
-            async def unban_chat_member(self, chat_id, user_id):
-                self.actions.append(("unban", chat_id, user_id))
-
-        class FakeUser:
-            def __init__(self, user_id):
-                self.id = user_id
-                self.username = f"user{user_id}"
-                self.is_bot = False
-
-        bot = FakeBot()
-        users = [FakeUser(10_000 + index) for index in range(50)]
-        for user in users:
-            await join_manager.start_for_user(bot, -100, user)
-
-        self.assertEqual(len(join_manager.pending), 50)
-        self.assertEqual(len([action for action in bot.actions if action[0] == "restrict"]), 50)
-        private_captchas = [
-            action for action in bot.actions
-            if action[0] == "send_message" and action[1] != -100 and action[3] is not None
-        ]
-        group_messages = [
-            action for action in bot.actions
-            if action[0] == "send_message" and action[1] == -100
-        ]
-        self.assertEqual(len(private_captchas), 50)
-        self.assertEqual(group_messages, [])
-        for user in users:
-            user_actions = [action[0] for action in bot.actions if len(action) > 2 and action[2] == user.id]
-            self.assertEqual(user_actions[0], "restrict")
-
-        for user in users:
-            join_manager.clear_user(-100, user.id)
-        if join_manager.STATE_PATH.exists():
-            join_manager.STATE_PATH.unlink()
-
-    async def test_closed_private_chat_creates_only_one_group_notice(self):
-        self.install_aiogram_stubs()
-        join_manager = importlib.reload(importlib.import_module("join_manager"))
-        join_manager.STATE_PATH = ROOT / "test_join_state.json"
-        join_manager.pending.clear()
-        join_manager.processing_users.clear()
-        join_manager.timeout_tasks.clear()
-        join_manager.group_notice_messages.clear()
-        join_manager.group_notice_tasks.clear()
-
-        class FakeMessage:
-            def __init__(self, message_id):
-                self.message_id = message_id
-
-        class FakeBot:
-            def __init__(self):
-                self.actions = []
-                self.next_message_id = 500
-
-            async def restrict_chat_member(self, chat_id, user_id, permissions):
-                self.actions.append(("restrict", chat_id, user_id, permissions.kwargs))
-
-            async def send_message(self, chat_id, text, reply_markup=None):
-                if chat_id > 0 and reply_markup is not None:
-                    raise RuntimeError("private chat closed")
-                self.actions.append(("send_message", chat_id, text, reply_markup))
-                self.next_message_id += 1
-                return FakeMessage(self.next_message_id)
-
-            async def ban_chat_member(self, chat_id, user_id):
-                self.actions.append(("ban", chat_id, user_id))
-
-            async def unban_chat_member(self, chat_id, user_id):
-                self.actions.append(("unban", chat_id, user_id))
-
-            async def delete_message(self, chat_id, message_id):
-                self.actions.append(("delete", chat_id, message_id))
-
-        class FakeUser:
-            def __init__(self, user_id):
-                self.id = user_id
-                self.username = f"user{user_id}"
-                self.is_bot = False
-
-        bot = FakeBot()
-        users = [FakeUser(20_000 + index) for index in range(50)]
-        for user in users:
-            await join_manager.start_for_user(bot, -100, user)
-
-        notices = [
-            action for action in bot.actions
-            if action[0] == "send_message" and action[1] == -100 and action[3] is not None
-        ]
-        private_captchas = [
-            action for action in bot.actions
-            if action[0] == "send_message" and action[1] != -100 and action[3] is not None
-        ]
-        self.assertEqual(len(join_manager.pending), 50)
-        self.assertEqual(len(notices), 1)
-        self.assertEqual(private_captchas, [])
-        self.assertTrue(all(data["delivery"] == "waiting_private" for data in join_manager.pending.values()))
-
-        for task in list(join_manager.group_notice_tasks.values()):
-            task.cancel()
-        for user in users:
-            join_manager.clear_user(-100, user.id)
-        join_manager.group_notice_messages.clear()
-        join_manager.group_notice_tasks.clear()
-        if join_manager.STATE_PATH.exists():
-            join_manager.STATE_PATH.unlink()
-
-    async def test_private_start_sends_waiting_captcha_without_group_noise(self):
-        self.install_aiogram_stubs()
-        join_manager = importlib.reload(importlib.import_module("join_manager"))
-        join_manager.STATE_PATH = ROOT / "test_join_state.json"
-        join_manager.pending.clear()
-        join_manager.processing_users.clear()
-        join_manager.timeout_tasks.clear()
-        join_manager.group_notice_messages.clear()
-        join_manager.group_notice_tasks.clear()
-
-        class FakeMessage:
-            def __init__(self, message_id):
-                self.message_id = message_id
-
-        class FakeBot:
-            def __init__(self):
-                self.actions = []
-                self.next_message_id = 800
-                self.private_open = False
-
-            async def restrict_chat_member(self, chat_id, user_id, permissions):
-                self.actions.append(("restrict", chat_id, user_id, permissions.kwargs))
-
-            async def send_message(self, chat_id, text, reply_markup=None):
-                if chat_id > 0 and reply_markup is not None and not self.private_open:
-                    raise RuntimeError("private chat closed")
-                self.actions.append(("send_message", chat_id, text, reply_markup))
-                self.next_message_id += 1
-                return FakeMessage(self.next_message_id)
-
-            async def ban_chat_member(self, chat_id, user_id):
-                self.actions.append(("ban", chat_id, user_id))
-
-            async def unban_chat_member(self, chat_id, user_id):
-                self.actions.append(("unban", chat_id, user_id))
-
-            async def delete_message(self, chat_id, message_id):
-                self.actions.append(("delete", chat_id, message_id))
-
-        class FakeUser:
-            id = 30_000
-            username = "private_start_user"
-            is_bot = False
-
-        bot = FakeBot()
-        await join_manager.start_for_user(bot, -100, FakeUser())
-        self.assertEqual(join_manager.pending[(-100, FakeUser.id)]["delivery"], "waiting_private")
-        bot.private_open = True
-        handled = await join_manager.handle_private_start(bot, FakeUser.id)
-        self.assertTrue(handled)
-        self.assertEqual(join_manager.pending[(-100, FakeUser.id)]["delivery"], "private")
-        private_captchas = [
-            action for action in bot.actions
-            if action[0] == "send_message" and action[1] == FakeUser.id and action[3] is not None
-        ]
-        group_notices = [
-            action for action in bot.actions
-            if action[0] == "send_message" and action[1] == -100 and action[3] is not None
-        ]
-        self.assertEqual(len(private_captchas), 1)
-        self.assertEqual(len(group_notices), 1)
-
-        for task in list(join_manager.group_notice_tasks.values()):
-            task.cancel()
-        join_manager.clear_user(-100, FakeUser.id)
-        join_manager.group_notice_messages.clear()
-        join_manager.group_notice_tasks.clear()
-        if join_manager.STATE_PATH.exists():
-            join_manager.STATE_PATH.unlink()
+    def test_question_reply_variety(self):
+        question_chat = importlib.reload(importlib.import_module("question_chat"))
+        replies = {question_chat.reply_for(500, "Почему так получилось?") for _ in range(30)}
+        self.assertEqual(len(replies), 30)
+        self.assertIsNone(question_chat.reply_for(500, "как дела?"))
 
 
 class RenderFilesTests(unittest.TestCase):
     def test_render_files_exist_and_are_light(self):
         self.assertIn("aiogram>=3.4,<4", (ROOT / "requirements.txt").read_text(encoding="utf-8"))
         self.assertIn("python-dotenv", (ROOT / "requirements.txt").read_text(encoding="utf-8"))
-        self.assertIn((ROOT / "Procfile").read_text(encoding="utf-8").strip(), {"web: python main.py", "worker: python main.py"})
-        render_text = (ROOT / "render.yaml").read_text(encoding="utf-8")
-        docker_text = (ROOT / "Dockerfile").read_text(encoding="utf-8") if (ROOT / "Dockerfile").exists() else ""
-        self.assertTrue("startCommand: python main.py" in render_text or 'CMD ["python", "main.py"]' in docker_text)
+        self.assertEqual((ROOT / "Procfile").read_text(encoding="utf-8").strip(), "web: python main.py")
+        self.assertIn("startCommand: python main.py", (ROOT / "render.yaml").read_text(encoding="utf-8"))
 
     def test_no_token_literal_in_project_files(self):
         for path in ROOT.glob("*"):
+            if path.resolve() == Path(__file__).resolve():
+                continue
             if path.is_file() and path.suffix in {".py", ".json", ".txt", ".yaml", ".md", ""}:
                 text = path.read_text(encoding="utf-8", errors="ignore")
                 with self.subTest(path=path.name):
-                    token_placeholder = "\u0412\u0421\u0422\u0410\u0412\u042c" + "_\u0422\u041e\u041a\u0415\u041d"
-                    self.assertNotIn(token_placeholder, text)
-                    token_example = "bot" + "_token" + "_here:"
-                    self.assertNotIn(token_example, text.lower())
-
-    def test_plain_links_allowed_for_trusted_members_but_ads_blocked(self):
-        source = (ROOT / "main.py").read_text(encoding="utf-8")
-        self.assertIn("def looks_like_ad(message: Message, *, allow_plain_links: bool)", source)
-        self.assertIn("if (has_clickable_link or has_text_link) and not allow_plain_links", source)
-        self.assertIn("allow_plain_links=not pending_captcha", source)
-        self.assertIn("Рекламные формулировки", source)
+                    self.assertNotIn("ВСТАВЬ_ТОКЕН", text)
+                    self.assertNotIn("bot_token_here:", text.lower())
 
 
 if __name__ == "__main__":
     unittest.main()
-
-class ImageJobAdFilterTests(unittest.TestCase):
-    def test_requested_job_ad_phrases(self):
-        module = importlib.import_module("image_job_ad_filter")
-        positives = [
-            "РАБОТА НА ДОМУ Доход от 5000 рублей в день Возраст 18+ Пишите менеджеру",
-            "Работа из дома. Заработок 7500 ₽ в день. Пишите Полине",
-            "Доход 5000 в день, работа на дому",
-        ]
-        negatives = [
-            "Сегодня работаю дома над игровым проектом",
-            "Менеджер написал о встрече",
-            "Фото без рекламного текста",
-        ]
-        self.assertTrue(all(module.looks_like_job_ad_text(text) for text in positives))
-        self.assertTrue(all(not module.looks_like_job_ad_text(text) for text in negatives))

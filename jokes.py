@@ -4,13 +4,18 @@ import time
 from collections import deque
 from pathlib import Path
 
+from config import ALLOW_DIRTY_JOKES
+
 
 JOKES_PATH = Path(__file__).resolve().parent / "jokes.json"
+SHORT_JOKES_PATH = Path(__file__).resolve().parent / "short_jokes.json"
+DIRTY_JOKES_PATH = Path(__file__).resolve().parent / "dirty_jokes.json"
 COOLDOWN_SECONDS = 60
 RECENT_LIMIT = 500
 
 last_use: dict[int, float] = {}
 recent: deque[int] = deque(maxlen=RECENT_LIMIT)
+recent_short: deque[int] = deque(maxlen=RECENT_LIMIT)
 
 COOLDOWN_REPLIES = [
     "😂 Ты так смеёшься, что база не успевает заряжаться. Осталось {seconds} сек.",
@@ -46,7 +51,26 @@ def load() -> list[str]:
     return [str(item).strip() for item in items if str(item).strip()]
 
 
-JOKES = load()
+def load_dirty() -> list[str]:
+    if not ALLOW_DIRTY_JOKES:
+        return []
+    with DIRTY_JOKES_PATH.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+    items = data.get("jokes", []) if isinstance(data, dict) else data
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
+JOKES = load() + load_dirty()
+
+
+def load_short() -> list[str]:
+    with SHORT_JOKES_PATH.open("r", encoding="utf-8") as file:
+        data = json.load(file)
+    items = data.get("jokes", []) if isinstance(data, dict) else data
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
+SHORT_JOKES = load_short()
 
 
 def seconds_left(user_id: int) -> int:
@@ -72,3 +96,16 @@ def get_joke(user_id: int) -> str:
     index = random.choice(available)
     recent.append(index)
     return JOKES[index]
+
+
+def get_short_joke(user_id: int) -> str:
+    last_use[user_id] = time.monotonic()
+    if not SHORT_JOKES:
+        return "Короткие шутки временно закончились."
+    available = [index for index in range(len(SHORT_JOKES)) if index not in recent_short]
+    if not available:
+        recent_short.clear()
+        available = list(range(len(SHORT_JOKES)))
+    index = random.choice(available)
+    recent_short.append(index)
+    return SHORT_JOKES[index]
