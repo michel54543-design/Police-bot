@@ -310,7 +310,14 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
             return
 
         username = (message.from_user.username or "").lower()
-        if addressed and username == OWNER_USERNAME:
+        # Вопросы о возможностях/командах всегда важнее персональных шуточных ответов.
+        # Иначе владелец/Юра могли получить «Я слушаю» вместо списка возможностей.
+        category = conversation.detect_category(text, addressed=True, continuation=conversation.is_dialog_continuation(message.from_user.id))
+        if category == "commands":
+            reply = conversation.reply_for(
+                message.from_user.id, text, addressed=True, chat_id=message.chat.id
+            )
+        elif addressed and username == OWNER_USERNAME:
             reply = OWNER_REPLIES[message.from_user.id % len(OWNER_REPLIES)]
         elif addressed and username == YURA_USERNAME:
             reply = YURA_REPLIES[message.from_user.id % len(YURA_REPLIES)]

@@ -392,11 +392,23 @@ async def _delete_shared_notice(bot: Bot, chat_id: int) -> None:
 
 
 def shared_verification_keyboard() -> InlineKeyboardMarkup:
+    # URL-кнопка надёжнее callback: Telegram сразу открывает личный чат бота.
+    # Бот уже знает ожидающего пользователя по его Telegram ID.
+    if BOT_USERNAME:
+        return InlineKeyboardMarkup(
+            inline_keyboard=[[
+                InlineKeyboardButton(
+                    text="✅ Пройти проверку",
+                    url=f"https://t.me/{BOT_USERNAME}?start=verify",
+                )
+            ]]
+        )
+    # Резерв до момента, когда username бота получен через getMe().
     return InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
                 text="✅ Пройти проверку",
-                callback_data="verify_shared",
+                callback_data="verify:open",
             )
         ]]
     )

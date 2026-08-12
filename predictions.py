@@ -32,7 +32,10 @@ PREDICTIONS = load()
 
 
 def seconds_left(user_id: int) -> int:
-    return max(0, COOLDOWN_SECONDS - int(time.monotonic() - last_use.get(user_id, 0)))
+    last = last_use.get(user_id)
+    if last is None:
+        return 0
+    return max(0, COOLDOWN_SECONDS - int(time.monotonic() - last))
 
 
 def can_use(user_id: int) -> bool:
