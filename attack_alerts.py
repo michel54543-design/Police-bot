@@ -24,6 +24,11 @@ ATTACKS_URL = os.getenv(
 ).strip()
 CHECK_INTERVAL_SECONDS = 30
 THRESHOLDS = (60, 30, 4)
+THRESHOLD_BANDS = {
+    60: (30, 60),
+    30: (4, 30),
+    4: (0, 4),
+}
 STATE_FILE = Path(__file__).resolve().parent / "attack_alerts_state.json"
 
 FUNNY_ALERTS = {
@@ -183,6 +188,13 @@ async def attack_alert_worker(bot: Bot) -> None:
                         ("Морского Змея", _parse_time(data.get("serpent_at"))),
                     )
                     changed = False
+                    chat_ids = stats.chat_ids()
+                    if not chat_ids:
+                        logger.info(
+                            "Ожидаю первое сообщение в группе, чтобы запомнить chat_id"
+                        )
+                        await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+                        continue
                     for event_name, event_at in events:
                         if event_at is None:
                             continue
@@ -192,14 +204,16 @@ async def attack_alert_worker(bot: Bot) -> None:
                         minutes_left = seconds_left / 60
                         event_key = event_at.isoformat()
                         for threshold in THRESHOLDS:
-                            # Окно в 3 минуты позволяет пережить сон Render,
-                            # но не отправляет давно просроченные предупреждения.
-                            if threshold - 3 < minutes_left <= threshold:
+                            # Диапазоны не дают пропустить предупреждение после
+                            # сна или Deploy Render: 60 -> до 30 минут,
+                            # 30 -> до 4 минут, 4 -> до самого события.
+                            lower, upper = THRESHOLD_BANDS[threshold]
+                            if lower < minutes_left <= upper:
                                 key = f"{event_name}|{event_key}|{threshold}"
                                 if key in sent:
                                     continue
                                 delivered = False
-                                for chat_id in stats.chat_ids():
+                                for chat_id in chat_ids:
                                     try:
                                         await bot.send_message(
                                             chat_id, _message(event_name, threshold)
