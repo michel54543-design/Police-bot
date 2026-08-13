@@ -174,6 +174,33 @@ async def _fetch_schedule(session: aiohttp.ClientSession) -> dict:
         return await response.json()
 
 
+async def schedule_status_text() -> str:
+    """Показывает, получает ли Police Bot актуальные таймеры."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            data = await _fetch_schedule(session)
+        if data.get("error"):
+            return f"⚠️ Сайт статистики вернул ошибку: {data['error']}"
+        now = datetime.now(timezone.utc)
+        lines = ["✅ Уведомления о нападениях включены в этой группе."]
+        for name, value in (
+            ("🔴🐉 Дракон", data.get("dragon_at")),
+            ("🟢🐍 Морской Змей", data.get("serpent_at")),
+        ):
+            event_at = _parse_time(value)
+            if event_at is None:
+                lines.append(f"{name}: нет актуального времени")
+                continue
+            minutes = max(0, int((event_at - now).total_seconds() // 60))
+            hours, rest = divmod(minutes, 60)
+            remaining = f"{hours} ч. {rest} мин." if hours else f"{rest} мин."
+            lines.append(f"{name}: через {remaining}")
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.exception("Не удалось получить статус нападений")
+        return f"⚠️ Не удалось получить время нападений: {exc}"
+
+
 async def attack_alert_worker(bot: Bot) -> None:
     """Проверяет таймеры и отправляет каждую отметку только один раз."""
     sent = _load_sent()

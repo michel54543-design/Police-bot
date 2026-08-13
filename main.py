@@ -17,6 +17,7 @@ from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 from dotenv import load_dotenv
 
 import auto_news
+import attack_alerts
 import challenges
 import conversation
 import image_job_ad_filter
@@ -201,6 +202,21 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
     async def challenge_handler(message: Message) -> None:
         await message.answer(challenges.get_challenge())
 
+    @dp.message(Command("атакивкл"))
+    async def attacks_on_handler(message: Message) -> None:
+        if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            await message.answer("Эту команду нужно отправить в общей группе.")
+            return
+        stats.register_chat(message.chat.id)
+        logger.info("ATTACK ALERTS ENABLED chat_id=%s", message.chat.id)
+        await message.answer(await attack_alerts.schedule_status_text())
+
+    @dp.message(Command("атакистатус"))
+    async def attacks_status_handler(message: Message) -> None:
+        if message.chat.type in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            stats.register_chat(message.chat.id)
+        await message.answer(await attack_alerts.schedule_status_text())
+
     @dp.message(Command("осадавкл"))
     async def raid_on(message: Message) -> None:
         if not message.from_user or (message.from_user.username or "").lower() not in {OWNER_USERNAME, YURA_USERNAME}:
@@ -351,11 +367,15 @@ async def main() -> None:
     await auto_news.start_worker(bot)
     register_handlers(dp, bot)
     report_task = asyncio.create_task(daily_report_worker(bot))
+    attack_alert_task = asyncio.create_task(attack_alerts.attack_alert_worker(bot))
 
     logger.info("Police Bot started as @%s", BOT_USERNAME)
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        attack_alert_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await attack_alert_task
         report_task.cancel()
         with suppress(asyncio.CancelledError):
             await report_task
