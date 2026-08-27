@@ -94,58 +94,54 @@ async def _json(session: aiohttp.ClientSession, path: str, params: dict | None =
 
 
 async def build_today_top_text() -> str:
-    """Считает лидера каждой категории от первого до последнего снимка сегодня."""
+    """Берёт уже рассчитанный блок «Топы сегодня» из API сайта статистики."""
     async with aiohttp.ClientSession() as session:
-        seed = await _json(session, "/api/players", {"page": 1, "per_page": 10, "sort": "glory", "mode": "general"})
-        dates = [x for x in seed.get("dates", []) if isinstance(x, str)]
-        today = datetime.now(TZ).date().isoformat()
-        today_dates = [x for x in dates if _local_day(x) == today]
-        if len(today_dates) < 2:
-            raise RuntimeError("Для TOP за сегодня нужно минимум два готовых снимка за текущий день")
+        data = await _json(session, "/api/today-tops", {"_": int(datetime.now(TZ).timestamp())})
 
-        # API возвращает даты от новых к старым.
-        date_to = today_dates[0]
-        date_from = today_dates[-1]
-        rows = []
-        first_counts: dict[int, int] = {}
-        names: dict[int, str] = {}
+    if not data.get("ready"):
+        # Сайт сам знает, готовы ли сегодняшние топы. Не пересчитываем их в боте.
+        raise RuntimeError(str(data.get("message") or "Топы сегодня на сайте пока не готовы"))
 
-        for metric, label, icon, negative in METRICS:
-            data = await _json(session, "/api/players", {
-                "page": 1, "per_page": 10, "sort": metric, "mode": "growth",
-                "from": date_from, "to": date_to,
-            })
-            players = data.get("players") or []
-            if not players:
-                continue
-            p = players[0]
-            gain = p.get("gain")
-            if gain is None:
-                continue
-            gain = int(gain)
-            if gain <= 0:
-                continue
-            pid = int(p.get("id") or 0)
-            nick = str(p.get("nickname") or "Игрок")
-            sign = "−" if negative else "+"
-            rows.append(f"{icon} {label}: <b>{nick}</b>  {sign}{_fmt(gain)}")
-            if pid:
-                first_counts[pid] = first_counts.get(pid, 0) + 1
-                names[pid] = nick
+    tops = data.get("tops") or []
+    if not isinstance(tops, list) or not tops:
+        raise RuntimeError("API /api/today-tops не вернул список топов")
 
-        if not rows:
-            raise RuntimeError("API не вернул приросты за сегодня")
+    rows = []
+    negative_metrics = {"losses", "silver_lost", "crystals_lost"}
+    for item in tops:
+        if not isinstance(item, dict):
+            continue
+        nick = str(item.get("nickname") or "Игрок")
+        label = str(item.get("label") or item.get("metric") or "Показатель")
+        icon = str(item.get("icon") or "🏆")
+        metric = str(item.get("metric") or "")
+        try:
+            gain = int(item.get("gain") or 0)
+        except (TypeError, ValueError):
+            continue
+        sign = "−" if metric in negative_metrics else "+"
+        rows.append(f"{icon} {label}: <b>{nick}</b>  {sign}{_fmt(gain)}")
 
-        hero_line = ""
-        if first_counts:
-            hero_id = max(first_counts, key=lambda x: first_counts[x])
-            hero_line = f"\n👑 Герой дня: <b>{names[hero_id]}</b> — {first_counts[hero_id]} первых мест\n"
+    if not rows:
+        raise RuntimeError("В Топах сегодня пока нет результатов")
 
-        return (
-            f"🏆 <b>ТОП ИГРОКОВ ЗА СЕГОДНЯ</b>\n"
-            f"📅 {datetime.now(TZ).strftime('%d.%m.%Y')}\n"
-            f"{hero_line}\n" + "\n".join(rows)
-        )
+    hero_line = ""
+    hero = data.get("hero")
+    if isinstance(hero, dict) and hero.get("nickname"):
+        first_places = int(hero.get("first_places") or 0)
+        hero_line = f"\n👑 Герой дня: <b>{hero['nickname']}</b> — {first_places} первых мест\n"
+
+    date_value = str(data.get("date") or "")
+    try:
+        shown_date = datetime.fromisoformat(date_value).strftime("%d.%m.%Y")
+    except ValueError:
+        shown_date = datetime.now(TZ).strftime("%d.%m.%Y")
+
+    return (
+        f"🏆 <b>ТОПЫ СЕГОДНЯ</b>\n"
+        f"📅 {shown_date}\n"
+        f"{hero_line}\n" + "\n".join(rows)
+    )
 
 
 async def today_tops_worker(bot: Bot) -> None:

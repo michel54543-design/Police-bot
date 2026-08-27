@@ -287,7 +287,7 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
         else:
             await message.answer("⚠️ Общий чат пока не зарегистрирован у бота.")
 
-    @dp.message(Command("топ"))
+    @dp.message(Command("топы"))
     async def today_top_command(message: Message) -> None:
         """Показывает TOP за сегодня. Общий лимит: один успешный вызов в час на чат."""
         if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
@@ -301,7 +301,7 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
             remaining = int(TOP_COMMAND_COOLDOWN_SECONDS - (now_ts - last_used))
             if remaining > 0:
                 minutes = max(1, (remaining + 59) // 60)
-                await message.reply(f"⏳ /топ можно вызвать не чаще одного раза в час. Осталось примерно {minutes} мин.")
+                await message.reply(f"⏳ /топы можно вызвать не чаще одного раза в час. Осталось примерно {minutes} мин.")
                 return
 
             try:
