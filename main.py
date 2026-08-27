@@ -31,6 +31,7 @@ import riddles
 import stats
 import stories
 import toasts
+import today_tops
 from utils import safe_delete_message
 
 load_dotenv()
@@ -53,6 +54,9 @@ with (BASE_DIR / "yura_replies.json").open("r", encoding="utf-8") as f:
 BOT_ID = 0
 BOT_USERNAME = ""
 MOLDOVA_TZ = ZoneInfo("Europe/Chisinau")
+TOP_COMMAND_COOLDOWN_SECONDS = 60 * 60
+_top_command_last_used: dict[int, float] = {}
+_top_command_lock = asyncio.Lock()
 
 AD_PHRASES = (
     "заработок без вложений", "доход в день", "работа на дому", "работа из дома",
@@ -253,6 +257,65 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
     async def new_members_handler(message: Message) -> None:
         await join_manager.handle_new_chat_members(bot, message)
 
+    @dp.message(Command("сказать"))
+    async def owner_say_handler(message: Message) -> None:
+        # Только Михаил, только в личном чате с ботом.
+        if message.chat.type != ChatType.PRIVATE or not message.from_user:
+            return
+        username = (message.from_user.username or "").lower()
+        if username != OWNER_USERNAME:
+            await message.answer("⛔ Эта команда доступна только владельцу.")
+            return
+
+        raw = (message.text or "").strip()
+        parts = raw.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].strip():
+            await message.answer("Напишите так: /сказать Ваш текст сообщения")
+            return
+
+        relay_text = parts[1].strip()
+        delivered = 0
+        for chat_id in stats.chat_ids():
+            try:
+                await bot.send_message(chat_id=chat_id, text=relay_text)
+                delivered += 1
+            except Exception as error:
+                logger.exception("OWNER SAY ERROR chat_id=%s: %r", chat_id, error)
+
+        if delivered:
+            await message.answer("✅ Сообщение опубликовано в общем чате от имени бота.")
+        else:
+            await message.answer("⚠️ Общий чат пока не зарегистрирован у бота.")
+
+    @dp.message(Command("топ"))
+    async def today_top_command(message: Message) -> None:
+        """Показывает TOP за сегодня. Общий лимит: один успешный вызов в час на чат."""
+        if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
+            return
+        stats.register_chat(message.chat.id)
+        chat_id = message.chat.id
+        now_ts = datetime.now(MOLDOVA_TZ).timestamp()
+
+        async with _top_command_lock:
+            last_used = _top_command_last_used.get(chat_id, 0.0)
+            remaining = int(TOP_COMMAND_COOLDOWN_SECONDS - (now_ts - last_used))
+            if remaining > 0:
+                minutes = max(1, (remaining + 59) // 60)
+                await message.reply(f"⏳ /топ можно вызвать не чаще одного раза в час. Осталось примерно {minutes} мин.")
+                return
+
+            try:
+                text = await today_tops.build_today_top_text()
+            except Exception:
+                logger.exception("TOP COMMAND BUILD ERROR chat_id=%s", chat_id)
+                await message.reply("⚠️ Сейчас не удалось получить Топы сегодня. Попробуйте немного позже.")
+                return
+
+            # Отсчёт часа начинается только после успешного получения статистики.
+            _top_command_last_used[chat_id] = datetime.now(MOLDOVA_TZ).timestamp()
+
+        await message.answer(text, parse_mode="HTML")
+
     @dp.message()
     async def general_handler(message: Message) -> None:
         if not message.from_user:
@@ -280,6 +343,8 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
                 removed = playful_mode.cancel(target)
                 await message.answer("Команда отменена." if removed else "Для этого участника активной команды нет.")
                 return
+            # Обычные личные сообщения Михаила больше не публикуются в группу.
+            # Для публикации используется только команда /сказать <текст>.
             return
         if message.chat.type not in {ChatType.GROUP, ChatType.SUPERGROUP}:
             return
@@ -367,12 +432,16 @@ async def main() -> None:
     await auto_news.start_worker(bot)
     register_handlers(dp, bot)
     report_task = asyncio.create_task(daily_report_worker(bot))
+    today_tops_task = asyncio.create_task(today_tops.today_tops_worker(bot))
     attack_alert_task = asyncio.create_task(attack_alerts.attack_alert_worker(bot))
 
     logger.info("Police Bot started as @%s", BOT_USERNAME)
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        today_tops_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await today_tops_task
         attack_alert_task.cancel()
         with suppress(asyncio.CancelledError):
             await attack_alert_task
