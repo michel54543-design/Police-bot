@@ -337,9 +337,26 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
             text = (message.text or message.caption or "").strip()
             lowered = text.lower().replace("ё", "е")
             if " ".join(lowered.split()) == "показать уведомления":
-                await message.answer(
-                    GAME_LINKS_NOTICE, parse_mode="HTML", disable_web_page_preview=True
-                )
+                if username != OWNER_USERNAME:
+                    await message.answer("⛔ Эта команда доступна только владельцу.")
+                    return
+                chat_ids = [chat_id for chat_id in stats.chat_ids() if chat_id < 0]
+                if not chat_ids:
+                    await message.answer("⚠️ Общий чат пока не зарегистрирован у бота. Напишите сообщение в группе и повторите команду.")
+                    return
+                if len(chat_ids) > 1:
+                    await message.answer("⚠️ Бот знает несколько групп. Нужно выбрать группу для уведомления; отправка отменена.")
+                    return
+                try:
+                    await bot.send_message(
+                        chat_id=chat_ids[0], text=GAME_LINKS_NOTICE,
+                        parse_mode="HTML", disable_web_page_preview=True
+                    )
+                except Exception:
+                    logger.exception("GAME LINKS NOTICE SEND ERROR chat_id=%s", chat_ids[0])
+                    await message.answer("⚠️ Не удалось отправить уведомление в группу. Проверьте, что бот состоит в ней и может отправлять сообщения.")
+                else:
+                    await message.answer("✅ Уведомление со ссылками опубликовано в группе.")
                 return
             if username == OWNER_USERNAME and lowered.startswith("начать шутить"):
                 target = playful_mode.parse_target(text)
