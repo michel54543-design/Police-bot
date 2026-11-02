@@ -54,6 +54,18 @@ with (BASE_DIR / "yura_replies.json").open("r", encoding="utf-8") as f:
 BOT_ID = 0
 BOT_USERNAME = ""
 MOLDOVA_TZ = ZoneInfo("Europe/Chisinau")
+GAME_LINKS_NOTICE = (
+    "⚔️ <b>Актуальные рабочие ссылки на игру:</b>\n\n"
+    "🇷🇺 Для игроков из России:\n"
+    "https://playwekings.com\n\n"
+    "🌍 Для всех игроков:\n"
+    "https://wekings.online\n\n"
+    "🔧 Резервная ссылка (если первые две недоступны):\n"
+    "http://87.228.3.220\n\n"
+    "📊 <b>Статистика WEKINGS</b>\n"
+    "Рейтинги, прирост игроков, топы и события игры:\n"
+    "https://wekings-statistics.onrender.com"
+)
 TOP_COMMAND_COOLDOWN_SECONDS = 60 * 60
 _top_command_last_used: dict[int, float] = {}
 _top_command_lock = asyncio.Lock()
@@ -324,6 +336,11 @@ def register_handlers(dp: Dispatcher, bot: Bot) -> None:
             username = (message.from_user.username or "").lower()
             text = (message.text or message.caption or "").strip()
             lowered = text.lower().replace("ё", "е")
+            if " ".join(lowered.split()) == "показать уведомления":
+                await message.answer(
+                    GAME_LINKS_NOTICE, parse_mode="HTML", disable_web_page_preview=True
+                )
+                return
             if username == OWNER_USERNAME and lowered.startswith("начать шутить"):
                 target = playful_mode.parse_target(text)
                 if not target:
